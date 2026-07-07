@@ -38,6 +38,15 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# python (pc-agent)
+__pycache__/
+*.pyc
+.venv/
+pc-agent/spool.db
+pc-agent/spool.db-shm
+pc-agent/spool.db-wal
+*.log
+
 example
 
 # generated native folders
