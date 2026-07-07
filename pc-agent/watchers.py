@@ -182,7 +182,7 @@ def _windows_usb_pnp_devices() -> dict[str, dict[str, str]]:
             "| ConvertTo-Json -Compress"
         ),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "PowerShell USB query failed")
 

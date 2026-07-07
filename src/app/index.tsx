@@ -1,4 +1,5 @@
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,6 +15,15 @@ function formatTimestamp(iso: string) {
 export default function DashboardScreen() {
   const { session, signOut } = useAuth();
   const { devices, events, loading, error } = useDashboard();
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+
+  const filteredEvents = useMemo(
+    () => (selectedDeviceId ? events.filter((event) => event.device_id === selectedDeviceId) : events),
+    [events, selectedDeviceId]
+  );
+  const selectedDeviceName = selectedDeviceId
+    ? (devices.find((device) => device.id === selectedDeviceId)?.name ?? null)
+    : null;
 
   return (
     <ThemedView style={styles.container}>
@@ -53,12 +63,39 @@ export default function DashboardScreen() {
           ))}
         </ThemedView>
 
+        {devices.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            <Pressable onPress={() => setSelectedDeviceId(null)}>
+              <ThemedView
+                type={selectedDeviceId === null ? 'backgroundSelected' : 'backgroundElement'}
+                style={styles.chip}>
+                <ThemedText type="small" themeColor={selectedDeviceId === null ? 'text' : 'textSecondary'}>
+                  All
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+            {devices.map((device) => (
+              <Pressable key={device.id} onPress={() => setSelectedDeviceId(device.id)}>
+                <ThemedView
+                  type={selectedDeviceId === device.id ? 'backgroundSelected' : 'backgroundElement'}
+                  style={styles.chip}>
+                  <ThemedText
+                    type="small"
+                    themeColor={selectedDeviceId === device.id ? 'text' : 'textSecondary'}>
+                    {device.name}
+                  </ThemedText>
+                </ThemedView>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+
         <ThemedText type="smallBold" style={styles.eventsTitle}>
-          Recent events
+          Recent events{selectedDeviceName ? ` — ${selectedDeviceName}` : ''}
         </ThemedText>
         <FlatList
           style={styles.eventsList}
-          data={events}
+          data={filteredEvents}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             !loading ? (
@@ -123,6 +160,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexGrow: 0,
+  },
+  chip: {
+    borderRadius: Spacing.five,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    marginRight: Spacing.two,
   },
   eventsTitle: {
     paddingTop: Spacing.two,

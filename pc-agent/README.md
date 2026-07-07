@@ -4,36 +4,30 @@ Monitors this PC and reports events to the Monitorix Supabase project:
 file/folder changes in watched directories, USB drive/device insert-remove,
 and application open/close.
 
-## Setup
+## Setup — same account, another PC
+
+Copy the `pc-agent/` folder (or clone the repo) onto the new machine, then:
 
 ```bash
 cd pc-agent
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env
-```
-
-Fill in `.env`:
-
-- `SUPABASE_URL` / `SUPABASE_ANON_KEY` — same values as the mobile app
-  (Supabase Project Settings > API > anon public). This is not a secret
-  admin key.
-
-Everything else has a sensible default — see the comments in `.env.example`.
-
-## Run
-
-```bash
 python main.py
 ```
 
-On first run it asks for the email/password of the account whose devices
-this agent should report under (the same account used in the mobile app).
-It then stores a renewable session token in `.session.json` (gitignored) so
-you're never prompted again on this machine — the password itself is never
-written to disk. If that stored session is later revoked, it just asks
-again.
+No `.env` needed — the Supabase project is already baked into `config.py`
+(see the comment there for why that's safe to bundle: it's the anon key,
+not an admin secret). On first run it asks for the email/password of the
+account whose devices this agent should report under (the same account
+used in the mobile app), then stores a renewable session token in
+`.session.json` (gitignored) so you're never prompted again on this
+machine — the password itself is never written to disk. If that stored
+session is later revoked, it just asks again.
+
+Each machine shows up as its own device in the dashboard, named after its
+hostname. If you want a clearer name (or two PCs happen to share a
+hostname), copy `.env.example` to `.env` and set `DEVICE_NAME`.
 
 Stop with Ctrl+C — it flushes remaining queued events before exiting.
 
