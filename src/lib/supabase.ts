@@ -11,11 +11,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+// AsyncStorage's web backend touches window/localStorage, which don't exist
+// during Expo Router's server-side render of the web build — omit it there.
+const isBrowser = typeof window !== 'undefined';
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
-    persistSession: true,
-    autoRefreshToken: true,
+    storage: isBrowser ? AsyncStorage : undefined,
+    persistSession: isBrowser,
+    autoRefreshToken: isBrowser,
     detectSessionInUrl: false,
   },
 });
