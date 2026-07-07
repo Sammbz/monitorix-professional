@@ -40,6 +40,38 @@ SYSTEM_PROCESS_NAMES = {
     "widgets.exe",
 }
 
+# Directory names that only ever contain tool/dependency noise, never
+# user-created content worth reporting.
+IGNORED_DIR_NAMES = {
+    "node_modules",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".expo",
+    ".next",
+    "dist",
+    "build",
+    ".cache",
+    ".pytest_cache",
+}
+
+# Suffixes/names that are almost always transient scratch files (editor
+# swap/lock files, browser downloads-in-progress, sync-client bookkeeping),
+# not something a user thinks of as "a file changed".
+IGNORED_FILE_SUFFIXES = (".tmp", ".temp", ".log", ".cache", ".crdownload", ".part", ".swp")
+IGNORED_FILE_NAMES = {"thumbs.db", "desktop.ini"}
+
+
+def _is_noise_path(path: Path) -> bool:
+    if any(part in IGNORED_DIR_NAMES for part in path.parts):
+        return True
+    if path.name.lower() in IGNORED_FILE_NAMES:
+        return True
+    if path.name.startswith(".") or path.name.startswith("~$") or path.name.startswith("~"):
+        return True
+    return path.suffix.lower() in IGNORED_FILE_SUFFIXES
+
 
 # --- File & folder watcher ---------------------------------------------------
 
@@ -58,7 +90,13 @@ class FileChangeHandler(FileSystemEventHandler):
         self._lock = threading.Lock()
 
     def _is_ignored(self, *paths: str) -> bool:
-        return any(Path(p).is_relative_to(ignored) for p in paths for ignored in self._ignored_dirs)
+        for raw_path in paths:
+            path = Path(raw_path)
+            if _is_noise_path(path):
+                return True
+            if any(path.is_relative_to(ignored) for ignored in self._ignored_dirs):
+                return True
+        return False
 
     def _emit(self, *, event_type: str, message: str, metadata: dict[str, Any], dedupe_key: str) -> None:
         if self._cooldown_seconds > 0:
@@ -269,7 +307,30 @@ def _is_user_app(name: str, exe_path: str) -> bool:
     return True
 
 
+def _visible_window_pids() -> set[int]:
+    """PIDs that own at least one visible, titled top-level window — i.e.
+    something the user can actually see and interact with, as opposed to a
+    background service/helper process with no UI."""
+    if platform.system().lower() != "windows":
+        return set()
+
+    user32 = ctypes.windll.user32
+    pids: set[int] = set()
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def enum_handler(hwnd: int, _lparam: int) -> bool:
+        if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
+            pid = ctypes.c_uint32()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            pids.add(int(pid.value))
+        return True
+
+    user32.EnumWindows(enum_handler, 0)
+    return pids
+
+
 def _scan_processes(*, only_user_apps: bool) -> dict[int, dict[str, str]]:
+    visible_pids = _visible_window_pids()
     processes: dict[int, dict[str, str]] = {}
     for proc in psutil.process_iter(["pid", "name", "exe"]):
         try:
@@ -280,6 +341,8 @@ def _scan_processes(*, only_user_apps: bool) -> dict[int, dict[str, str]]:
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, ValueError):
             continue
         if pid <= 0 or not name:
+            continue
+        if pid not in visible_pids:
             continue
         if only_user_apps and not _is_user_app(name, exe):
             continue

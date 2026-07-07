@@ -4,34 +4,40 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { CategoryColors, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
 import { useDashboard } from '@/hooks/use-dashboard';
+import { useTheme } from '@/hooks/use-theme';
+import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory } from '@/lib/event-categories';
+
+type CategoryTabKey = (typeof EVENT_CATEGORY_TABS)[number]['key'];
 
 function formatTimestamp(iso: string) {
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export default function DashboardScreen() {
+  const theme = useTheme();
   const { session, signOut } = useAuth();
-  const { devices, events, loading, error } = useDashboard();
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryTabKey>('all');
 
-  const filteredEvents = useMemo(
-    () => (selectedDeviceId ? events.filter((event) => event.device_id === selectedDeviceId) : events),
-    [events, selectedDeviceId]
+  const categoryEventTypes = useMemo(
+    () => (selectedCategory === 'all' ? null : eventTypesForCategory(selectedCategory)),
+    [selectedCategory]
   );
-  const selectedDeviceName = selectedDeviceId
-    ? (devices.find((device) => device.id === selectedDeviceId)?.name ?? null)
-    : null;
+  const { devices, events, loading, error } = useDashboard({
+    deviceId: selectedDeviceId,
+    categoryEventTypes,
+  });
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View>
-            <ThemedText type="title" style={styles.title}>
-              Monitorix
+            <ThemedText type="code" themeColor="accent" style={styles.eyebrow}>
+              MONITORIX
             </ThemedText>
             <ThemedText themeColor="textSecondary" type="small">
               {session?.user.email}
@@ -44,44 +50,44 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+        {error && (
+          <ThemedText themeColor="danger" type="small">
+            {error}
+          </ThemedText>
+        )}
 
-        <ThemedView type="backgroundElement" style={styles.section}>
-          <ThemedText type="smallBold">Devices ({devices.length})</ThemedText>
-          {!loading && devices.length === 0 && (
+        {devices.length === 0 && !loading ? (
+          <ThemedView type="backgroundElement" style={[styles.emptyDevices, { borderColor: theme.border }]}>
+            <ThemedText type="smallBold">No devices yet</ThemedText>
             <ThemedText themeColor="textSecondary" type="small">
-              No devices yet. Connect a monitoring agent to register one.
+              Run the monitoring agent on a PC and sign in with this account to see it here.
             </ThemedText>
-          )}
-          {devices.map((device) => (
-            <View key={device.id} style={styles.row}>
-              <ThemedText type="default">{device.name}</ThemedText>
-              <ThemedText themeColor="textSecondary" type="small">
-                {formatTimestamp(device.created_at)}
-              </ThemedText>
-            </View>
-          ))}
-        </ThemedView>
-
-        {devices.length > 0 && (
+          </ThemedView>
+        ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
             <Pressable onPress={() => setSelectedDeviceId(null)}>
               <ThemedView
-                type={selectedDeviceId === null ? 'backgroundSelected' : 'backgroundElement'}
-                style={styles.chip}>
-                <ThemedText type="small" themeColor={selectedDeviceId === null ? 'text' : 'textSecondary'}>
-                  All
+                style={[
+                  styles.chip,
+                  { borderColor: selectedDeviceId === null ? theme.accent : theme.border },
+                  selectedDeviceId === null && { backgroundColor: theme.backgroundSelected },
+                ]}>
+                <ThemedText type="small" themeColor={selectedDeviceId === null ? 'accent' : 'textSecondary'}>
+                  All devices
                 </ThemedText>
               </ThemedView>
             </Pressable>
             {devices.map((device) => (
               <Pressable key={device.id} onPress={() => setSelectedDeviceId(device.id)}>
                 <ThemedView
-                  type={selectedDeviceId === device.id ? 'backgroundSelected' : 'backgroundElement'}
-                  style={styles.chip}>
+                  style={[
+                    styles.chip,
+                    { borderColor: selectedDeviceId === device.id ? theme.accent : theme.border },
+                    selectedDeviceId === device.id && { backgroundColor: theme.backgroundSelected },
+                  ]}>
                   <ThemedText
                     type="small"
-                    themeColor={selectedDeviceId === device.id ? 'text' : 'textSecondary'}>
+                    themeColor={selectedDeviceId === device.id ? 'accent' : 'textSecondary'}>
                     {device.name}
                   </ThemedText>
                 </ThemedView>
@@ -90,36 +96,57 @@ export default function DashboardScreen() {
           </ScrollView>
         )}
 
-        <ThemedText type="smallBold" style={styles.eventsTitle}>
-          Recent events{selectedDeviceName ? ` — ${selectedDeviceName}` : ''}
-        </ThemedText>
+        <View style={[styles.tabRow, { borderBottomColor: theme.border }]}>
+          {EVENT_CATEGORY_TABS.map((tab) => {
+            const active = selectedCategory === tab.key;
+            return (
+              <Pressable key={tab.key} onPress={() => setSelectedCategory(tab.key)} style={styles.tab}>
+                <ThemedText type="smallBold" themeColor={active ? 'text' : 'textSecondary'}>
+                  {tab.label}
+                </ThemedText>
+                <View style={[styles.tabIndicator, active && { backgroundColor: theme.accent }]} />
+              </Pressable>
+            );
+          })}
+        </View>
+
         <FlatList
           style={styles.eventsList}
-          data={filteredEvents}
+          data={events}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             !loading ? (
-              <ThemedText themeColor="textSecondary" type="small">
-                No events yet.
+              <ThemedText themeColor="textSecondary" type="small" style={styles.emptyEvents}>
+                No events in this view yet.
               </ThemedText>
             ) : null
           }
-          renderItem={({ item }) => (
-            <ThemedView type="backgroundElement" style={styles.eventRow}>
-              <View style={styles.eventRowHeader}>
-                <ThemedText type="smallBold">{item.event_type}</ThemedText>
-                <ThemedText themeColor="textSecondary" type="small">
-                  {formatTimestamp(item.created_at)}
-                </ThemedText>
+          renderItem={({ item }) => {
+            const category = categorizeEvent(item.event_type);
+            return (
+              <View style={styles.eventRow}>
+                <View style={[styles.eventAccent, { backgroundColor: CategoryColors[category] }]} />
+                <ThemedView type="backgroundElement" style={[styles.eventBody, { borderColor: theme.border }]}>
+                  <View style={styles.eventRowHeader}>
+                    <ThemedText type="code" style={{ color: CategoryColors[category] }}>
+                      {item.event_type}
+                    </ThemedText>
+                    <ThemedText themeColor="textSecondary" type="code">
+                      {formatTimestamp(item.created_at)}
+                    </ThemedText>
+                  </View>
+                  <ThemedText type="small" style={styles.eventMessage}>
+                    {item.message}
+                  </ThemedText>
+                  {item.devices?.name && (
+                    <ThemedText themeColor="textSecondary" type="small">
+                      {item.devices.name}
+                    </ThemedText>
+                  )}
+                </ThemedView>
               </View>
-              <ThemedText type="small">{item.message}</ThemedText>
-              {item.devices?.name && (
-                <ThemedText themeColor="textSecondary" type="small">
-                  {item.devices.name}
-                </ThemedText>
-              )}
-            </ThemedView>
-          )}
+            );
+          }}
         />
       </SafeAreaView>
     </ThemedView>
@@ -134,7 +161,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.four,
     gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     width: '100%',
@@ -145,46 +171,72 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingTop: Spacing.three,
   },
-  title: {
-    fontSize: 28,
-    lineHeight: 32,
+  eyebrow: {
+    letterSpacing: 2,
+    marginBottom: Spacing.half,
   },
-  error: {
-    color: '#d92c2c',
-  },
-  section: {
-    borderRadius: Spacing.four,
+  emptyDevices: {
+    borderRadius: Radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: Spacing.half,
   },
   chipRow: {
     flexDirection: 'row',
     flexGrow: 0,
   },
   chip: {
-    borderRadius: Spacing.five,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
     marginRight: Spacing.two,
   },
-  eventsTitle: {
-    paddingTop: Spacing.two,
+  tabRow: {
+    flexDirection: 'row',
+    gap: Spacing.four,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tab: {
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingBottom: Spacing.two,
+  },
+  tabIndicator: {
+    height: 2,
+    width: '100%',
+    borderRadius: Radius.pill,
   },
   eventsList: {
     flex: 1,
   },
+  emptyEvents: {
+    paddingTop: Spacing.four,
+    textAlign: 'center',
+  },
   eventRow: {
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
+    flexDirection: 'row',
     marginBottom: Spacing.two,
+  },
+  eventAccent: {
+    width: 3,
+    borderTopLeftRadius: Radius.small,
+    borderBottomLeftRadius: Radius.small,
+  },
+  eventBody: {
+    flex: 1,
+    borderTopRightRadius: Radius.medium,
+    borderBottomRightRadius: Radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 0,
+    padding: Spacing.three,
     gap: Spacing.half,
   },
   eventRowHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  eventMessage: {
+    paddingTop: Spacing.half,
   },
 });
