@@ -1,66 +1,89 @@
-import * as Device from 'expo-device';
-import { Platform, Pressable, StyleSheet } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
+import { useDashboard } from '@/hooks/use-dashboard';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+function formatTimestamp(iso: string) {
+  return new Date(iso).toLocaleString();
 }
 
-export default function HomeScreen() {
+export default function DashboardScreen() {
   const { session, signOut } = useAuth();
+  const { devices, events, loading, error } = useDashboard();
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Monitorix
-          </ThemedText>
+        <View style={styles.header}>
+          <View>
+            <ThemedText type="title" style={styles.title}>
+              Monitorix
+            </ThemedText>
+            <ThemedText themeColor="textSecondary" type="small">
+              {session?.user.email}
+            </ThemedText>
+          </View>
+          <Pressable onPress={signOut}>
+            <ThemedText type="link" themeColor="textSecondary">
+              Sign out
+            </ThemedText>
+          </Pressable>
+        </View>
+
+        {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+
+        <ThemedView type="backgroundElement" style={styles.section}>
+          <ThemedText type="smallBold">Devices ({devices.length})</ThemedText>
+          {!loading && devices.length === 0 && (
+            <ThemedText themeColor="textSecondary" type="small">
+              No devices yet. Connect a monitoring agent to register one.
+            </ThemedText>
+          )}
+          {devices.map((device) => (
+            <View key={device.id} style={styles.row}>
+              <ThemedText type="default">{device.name}</ThemedText>
+              <ThemedText themeColor="textSecondary" type="small">
+                {formatTimestamp(device.created_at)}
+              </ThemedText>
+            </View>
+          ))}
         </ThemedView>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Signed in as"
-            hint={<ThemedText type="code">{session?.user.email}</ThemedText>}
-          />
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-        </ThemedView>
-
-        <Pressable onPress={signOut} style={styles.signOutButton}>
-          <ThemedText type="link" themeColor="textSecondary">
-            Sign out
-          </ThemedText>
-        </Pressable>
-
-        {Platform.OS === 'web' && <WebBadge />}
+        <ThemedText type="smallBold" style={styles.eventsTitle}>
+          Recent events
+        </ThemedText>
+        <FlatList
+          style={styles.eventsList}
+          data={events}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={
+            !loading ? (
+              <ThemedText themeColor="textSecondary" type="small">
+                No events yet.
+              </ThemedText>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <ThemedView type="backgroundElement" style={styles.eventRow}>
+              <View style={styles.eventRowHeader}>
+                <ThemedText type="smallBold">{item.event_type}</ThemedText>
+                <ThemedText themeColor="textSecondary" type="small">
+                  {formatTimestamp(item.created_at)}
+                </ThemedText>
+              </View>
+              <ThemedText type="small">{item.message}</ThemedText>
+              {item.devices?.name && (
+                <ThemedText themeColor="textSecondary" type="small">
+                  {item.devices.name}
+                </ThemedText>
+              )}
+            </ThemedView>
+          )}
+        />
       </SafeAreaView>
     </ThemedView>
   );
@@ -69,38 +92,52 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
   },
   safeArea: {
     flex: 1,
     paddingHorizontal: Spacing.four,
-    alignItems: 'center',
     gap: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.three,
     maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    width: '100%',
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingTop: Spacing.three,
   },
   title: {
-    textAlign: 'center',
+    fontSize: 28,
+    lineHeight: 32,
   },
-  code: {
-    textTransform: 'uppercase',
+  error: {
+    color: '#d92c2c',
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
+  section: {
     borderRadius: Spacing.four,
+    padding: Spacing.three,
+    gap: Spacing.two,
   },
-  signOutButton: {
-    paddingVertical: Spacing.two,
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  eventsTitle: {
+    paddingTop: Spacing.two,
+  },
+  eventsList: {
+    flex: 1,
+  },
+  eventRow: {
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    marginBottom: Spacing.two,
+    gap: Spacing.half,
+  },
+  eventRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
 });
