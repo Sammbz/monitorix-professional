@@ -30,6 +30,9 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Claude Code harness state
+.claude/scheduled_tasks.lock
+
 # env files (never commit secrets, even anon keys)
 .env
 .env.*
