@@ -1,10 +1,10 @@
 -- Monitorix base schema (MVP)
 -- Run this in the Supabase SQL Editor for your project.
 --
--- Ownership model: each device belongs to exactly one auth user.
--- The mobile app (anon key) can only read its own user's devices/events.
--- The PC agent (built later) will insert events using the service_role
--- key, which bypasses RLS entirely — never ship that key in the app.
+-- Ownership model: each device belongs to exactly one auth user. The
+-- mobile app AND the pc-agent both connect as a signed-in user (anon key +
+-- session), so Row Level Security scopes everything to whoever is signed
+-- in on each side — no admin-only service_role key involved anywhere.
 
 create extension if not exists pgcrypto;
 
@@ -67,9 +67,20 @@ create policy "select own events" on public.events
     )
   );
 
--- No insert/update/delete policy for events under the anon/authenticated
--- roles on purpose: the PC agent writes events with the service_role key,
--- which bypasses RLS. The app only ever reads.
+drop policy if exists "insert own events" on public.events;
+create policy "insert own events" on public.events
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.devices
+      where devices.id = events.device_id
+        and devices.user_id = auth.uid()
+    )
+  );
+
+-- No update/delete policy for events on purpose: once written, events are
+-- an append-only log — nobody, including the owning user, can edit them
+-- through the API.
 
 -- Enable Realtime so the dashboard can subscribe to live inserts.
 -- alter publication ... add table has no "if not exists" either.

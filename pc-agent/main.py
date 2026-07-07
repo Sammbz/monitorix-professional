@@ -7,12 +7,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+import auth
 from config import load_config
 from spool import SQLiteSpool
 from supabase_client import SupabaseRestClient
 from watchers import run_file_watcher, run_process_watcher, run_usb_watcher
 
 logger = logging.getLogger("pc-agent")
+
+SESSION_FILE_NAME = ".session.json"
 
 
 def configure_logging(level: str) -> None:
@@ -22,12 +25,35 @@ def configure_logging(level: str) -> None:
     )
 
 
+def sign_in(client: SupabaseRestClient, *, supabase_url: str, anon_key: str, timeout: float, session_path: Path) -> None:
+    """Restores a stored session (refreshing it) if one exists and is still
+    valid; otherwise prompts for email/password. Either way, the resulting
+    session (refresh token rotates on every use) is persisted to disk so the
+    password is never needed again on this machine."""
+    stored = auth.load_stored_session(session_path)
+    if stored and stored.get("refresh_token"):
+        try:
+            data = auth.refresh_session(
+                base_url=supabase_url, anon_key=anon_key, refresh_token=stored["refresh_token"], timeout=timeout
+            )
+            client.apply_auth_response(data)
+            logger.info("Restored session for %s", client.email)
+            return
+        except auth.AuthError:
+            logger.warning("Stored session is no longer valid; signing in again.")
+
+    email, password = auth.prompt_for_credentials()
+    data = auth.sign_in_with_password(
+        base_url=supabase_url, anon_key=anon_key, email=email, password=password, timeout=timeout
+    )
+    client.apply_auth_response(data)
+
+
 def run_event_sender(
     *,
     stop_event: threading.Event,
     spool: SQLiteSpool,
     client: SupabaseRestClient,
-    user_id: str,
     device_name: str,
     device_id: str | None,
 ) -> None:
@@ -44,7 +70,7 @@ def run_event_sender(
         for row in batch:
             if not device_id:
                 try:
-                    device_id = client.get_or_create_device_id(user_id=user_id, device_name=device_name)
+                    device_id = client.get_or_create_device_id(device_name)
                     logger.info("Obtained device id: %s", device_id)
                 except Exception:
                     logger.exception("Could not obtain device id; will retry")
@@ -73,17 +99,29 @@ def main() -> int:
 
     base_dir = Path(__file__).resolve().parent
     spool = SQLiteSpool(base_dir / "spool.db")
+    session_path = base_dir / SESSION_FILE_NAME
+
+    def persist_session(refresh_token: str, user_id: str, email: str) -> None:
+        auth.save_stored_session(session_path, refresh_token=refresh_token, user_id=user_id, email=email)
+
     client = SupabaseRestClient(
         supabase_url=config.supabase_url,
-        service_role_key=config.supabase_service_role_key,
+        anon_key=config.supabase_anon_key,
         timeout_seconds=config.supabase_timeout_seconds,
+        on_session_refreshed=persist_session,
     )
+    sign_in(
+        client,
+        supabase_url=config.supabase_url,
+        anon_key=config.supabase_anon_key,
+        timeout=config.supabase_timeout_seconds,
+        session_path=session_path,
+    )
+    logger.info("Signed in as %s", client.email)
 
     device_id: str | None = None
     try:
-        device_id = client.get_or_create_device_id(
-            user_id=config.device_user_id, device_name=config.device_name
-        )
+        device_id = client.get_or_create_device_id(config.device_name)
         logger.info("Using device id: %s", device_id)
     except Exception:
         logger.warning("Could not reach Supabase at startup; will retry while sending events")
@@ -111,7 +149,6 @@ def main() -> int:
             "stop_event": stop_event,
             "spool": spool,
             "client": client,
-            "user_id": config.device_user_id,
             "device_name": config.device_name,
             "device_id": device_id,
         },
@@ -125,6 +162,10 @@ def main() -> int:
         recursive=config.file_watch_recursive,
         cooldown_seconds=config.file_event_cooldown_seconds,
         callback=enqueue,
+        # Never report the agent's own state files (spool db, session) as
+        # user activity — otherwise writing an event modifies spool.db-wal,
+        # which would be detected and re-enqueued as another event, forever.
+        ignored_dirs=(base_dir,),
     )
 
     usb_thread = threading.Thread(

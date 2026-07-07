@@ -45,6 +45,7 @@ __pycache__/
 pc-agent/spool.db
 pc-agent/spool.db-shm
 pc-agent/spool.db-wal
+pc-agent/.session.json
 *.log
 
 example

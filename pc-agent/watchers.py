@@ -45,11 +45,20 @@ SYSTEM_PROCESS_NAMES = {
 
 
 class FileChangeHandler(FileSystemEventHandler):
-    def __init__(self, callback: EventCallback, cooldown_seconds: float) -> None:
+    def __init__(
+        self,
+        callback: EventCallback,
+        cooldown_seconds: float,
+        ignored_dirs: tuple[Path, ...] = (),
+    ) -> None:
         self._callback = callback
         self._cooldown_seconds = cooldown_seconds
+        self._ignored_dirs = ignored_dirs
         self._last_seen: dict[tuple[str, str], float] = {}
         self._lock = threading.Lock()
+
+    def _is_ignored(self, *paths: str) -> bool:
+        return any(Path(p).is_relative_to(ignored) for p in paths for ignored in self._ignored_dirs)
 
     def _emit(self, *, event_type: str, message: str, metadata: dict[str, Any], dedupe_key: str) -> None:
         if self._cooldown_seconds > 0:
@@ -63,6 +72,8 @@ class FileChangeHandler(FileSystemEventHandler):
 
     def on_created(self, event: FileSystemEvent) -> None:
         path = str(Path(event.src_path))
+        if self._is_ignored(path):
+            return
         if event.is_directory:
             self._emit(
                 event_type="DIRECTORY_CREATED",
@@ -80,6 +91,8 @@ class FileChangeHandler(FileSystemEventHandler):
 
     def on_deleted(self, event: FileSystemEvent) -> None:
         path = str(Path(event.src_path))
+        if self._is_ignored(path):
+            return
         event_type = "DIRECTORY_DELETED" if event.is_directory else "FILE_DELETED"
         message = "Directory deleted" if event.is_directory else "File deleted"
         self._emit(event_type=event_type, message=message, metadata={"path": path}, dedupe_key=path)
@@ -88,6 +101,8 @@ class FileChangeHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = str(Path(event.src_path))
+        if self._is_ignored(path):
+            return
         self._emit(
             event_type="FILE_MODIFIED",
             message="File modified",
@@ -98,6 +113,8 @@ class FileChangeHandler(FileSystemEventHandler):
     def on_moved(self, event: FileSystemMovedEvent) -> None:
         src_path = str(Path(event.src_path))
         dest_path = str(Path(event.dest_path))
+        if self._is_ignored(src_path, dest_path):
+            return
         event_type = "DIRECTORY_MOVED" if event.is_directory else "FILE_MOVED"
         message = "Directory moved" if event.is_directory else "File moved"
         self._emit(
@@ -114,10 +131,11 @@ def run_file_watcher(
     recursive: bool,
     cooldown_seconds: float,
     callback: EventCallback,
+    ignored_dirs: tuple[Path, ...] = (),
 ) -> Observer | None:
     """Starts a background Observer watching the given paths. Returns None if
     no valid folder was found (nothing to stop later)."""
-    handler = FileChangeHandler(callback, cooldown_seconds=cooldown_seconds)
+    handler = FileChangeHandler(callback, cooldown_seconds=cooldown_seconds, ignored_dirs=ignored_dirs)
     observer: Observer | None = None
 
     for path in watch_paths:

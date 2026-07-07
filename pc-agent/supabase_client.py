@@ -1,27 +1,62 @@
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, Callable
 
 import requests
 
+from auth import refresh_session
+
+OnSessionRefreshed = Callable[[str, str, str], None]  # (refresh_token, user_id, email)
+
 
 class SupabaseRestClient:
-    """Talks to Supabase's PostgREST API using the service_role key, which
-    bypasses Row Level Security. Only ever use this key server-side/agent-side
-    — never ship it in the mobile app.
+    """Talks to Supabase's PostgREST API as a signed-in user (anon key +
+    access token). Row Level Security applies exactly as it would for the
+    mobile app — this agent only ever reads/writes what its own account owns.
     """
 
-    def __init__(self, supabase_url: str, service_role_key: str, timeout_seconds: float = 10.0) -> None:
-        self._base_url = f"{supabase_url.rstrip('/')}/rest/v1"
+    def __init__(
+        self,
+        *,
+        supabase_url: str,
+        anon_key: str,
+        timeout_seconds: float = 10.0,
+        on_session_refreshed: OnSessionRefreshed | None = None,
+    ) -> None:
+        self._supabase_url = supabase_url.rstrip("/")
+        self._rest_url = f"{self._supabase_url}/rest/v1"
+        self._anon_key = anon_key
         self._timeout_seconds = timeout_seconds
         self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "apikey": service_role_key,
-                "Authorization": f"Bearer {service_role_key}",
-                "Content-Type": "application/json",
-            }
-        )
+        self._on_session_refreshed = on_session_refreshed
+
+        self._access_token: str | None = None
+        self._refresh_token: str | None = None
+        self._expires_at: float = 0.0
+        self.user_id: str | None = None
+        self.email: str | None = None
+
+    def apply_auth_response(self, data: dict[str, Any]) -> None:
+        self._access_token = data["access_token"]
+        self._refresh_token = data["refresh_token"]
+        self._expires_at = time.time() + float(data.get("expires_in", 3600)) - 60
+        self.user_id = str(data["user"]["id"])
+        self.email = str(data["user"].get("email", ""))
+        if self._on_session_refreshed:
+            self._on_session_refreshed(self._refresh_token, self.user_id, self.email)
+
+    def _ensure_fresh_token(self) -> None:
+        if not self._access_token or time.time() >= self._expires_at:
+            if not self._refresh_token:
+                raise RuntimeError("No Supabase session available; sign in first.")
+            data = refresh_session(
+                base_url=self._supabase_url,
+                anon_key=self._anon_key,
+                refresh_token=self._refresh_token,
+                timeout=self._timeout_seconds,
+            )
+            self.apply_auth_response(data)
 
     def _request(
         self,
@@ -32,12 +67,19 @@ class SupabaseRestClient:
         json_body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
     ) -> Any:
+        self._ensure_fresh_token()
+        headers = {
+            "apikey": self._anon_key,
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+            **(extra_headers or {}),
+        }
         response = self._session.request(
             method=method,
-            url=f"{self._base_url}/{table}",
+            url=f"{self._rest_url}/{table}",
             params=params,
             json=json_body,
-            headers=extra_headers or {},
+            headers=headers,
             timeout=self._timeout_seconds,
         )
         if response.status_code >= 400:
@@ -45,13 +87,12 @@ class SupabaseRestClient:
             raise RuntimeError(f"Supabase request failed for '{table}': {details}")
         return response.json() if response.text.strip() else None
 
-    def get_or_create_device_id(self, *, user_id: str, device_name: str) -> str:
+    def get_or_create_device_id(self, device_name: str) -> str:
         rows = self._request(
             "GET",
             "devices",
             params={
                 "select": "id",
-                "user_id": f"eq.{user_id}",
                 "name": f"eq.{device_name}",
                 "order": "created_at.desc",
                 "limit": "1",
@@ -65,7 +106,7 @@ class SupabaseRestClient:
         created = self._request(
             "POST",
             "devices",
-            json_body={"user_id": user_id, "name": device_name},
+            json_body={"user_id": self.user_id, "name": device_name},
             extra_headers={"Prefer": "return=representation"},
         )
         if not created:

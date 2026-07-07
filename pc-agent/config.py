@@ -11,8 +11,7 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Config:
     supabase_url: str
-    supabase_service_role_key: str
-    device_user_id: str
+    supabase_anon_key: str
     device_name: str
     watch_paths: tuple[Path, ...]
     file_watch_recursive: bool
@@ -71,8 +70,7 @@ def load_config() -> Config:
 
     return Config(
         supabase_url=_required("SUPABASE_URL"),
-        supabase_service_role_key=_required("SUPABASE_SERVICE_ROLE_KEY"),
-        device_user_id=_required("DEVICE_USER_ID"),
+        supabase_anon_key=_required("SUPABASE_ANON_KEY"),
         device_name=os.getenv("DEVICE_NAME", "").strip() or platform.node() or "pc-agent",
         watch_paths=_parse_watch_paths(os.getenv("WATCH_PATHS")),
         file_watch_recursive=_as_bool(os.getenv("FILE_WATCH_RECURSIVE"), True),
