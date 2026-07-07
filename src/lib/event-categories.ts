@@ -1,3 +1,5 @@
+import type { JsonValue } from '@/types/monitoring';
+
 export type EventCategory = 'file' | 'software' | 'usb' | 'other';
 
 const CATEGORY_EVENT_TYPES: Record<Exclude<EventCategory, 'other'>, string[]> = {
@@ -27,6 +29,32 @@ export function categorizeEvent(eventType: string): EventCategory {
 
 export function eventTypesForCategory(category: Exclude<EventCategory, 'other'>): string[] {
   return CATEGORY_EVENT_TYPES[category];
+}
+
+function basename(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : path;
+}
+
+/**
+ * A specific, human-readable detail for an event — e.g. the file name for
+ * file/folder events — pulled out of its metadata. Falls back to null when
+ * metadata doesn't carry a path (e.g. software/USB events already name the
+ * app/device in their message).
+ */
+export function getEventDetail(metadata: JsonValue): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const record = metadata as Record<string, JsonValue | undefined>;
+
+  const srcPath = typeof record.src_path === 'string' ? record.src_path : null;
+  const destPath = typeof record.dest_path === 'string' ? record.dest_path : null;
+  if (srcPath && destPath) {
+    return `${basename(srcPath)} → ${basename(destPath)}`;
+  }
+
+  const path = typeof record.path === 'string' ? record.path : null;
+  return path ? basename(path) : null;
 }
 
 export const EVENT_CATEGORY_TABS: { key: 'all' | Exclude<EventCategory, 'other'>; label: string }[] = [

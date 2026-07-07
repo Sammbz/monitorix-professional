@@ -8,7 +8,7 @@ import { CategoryColors, MaxContentWidth, Radius, Spacing } from '@/constants/th
 import { useAuth } from '@/hooks/use-auth';
 import { useDashboard } from '@/hooks/use-dashboard';
 import { useTheme } from '@/hooks/use-theme';
-import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory } from '@/lib/event-categories';
+import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory, getEventDetail } from '@/lib/event-categories';
 
 type CategoryTabKey = (typeof EVENT_CATEGORY_TABS)[number]['key'];
 
@@ -123,6 +123,7 @@ export default function DashboardScreen() {
           }
           renderItem={({ item }) => {
             const category = categorizeEvent(item.event_type);
+            const detail = getEventDetail(item.metadata);
             return (
               <View style={styles.eventRow}>
                 <View style={[styles.eventAccent, { backgroundColor: CategoryColors[category] }]} />
@@ -135,9 +136,15 @@ export default function DashboardScreen() {
                       {formatTimestamp(item.created_at)}
                     </ThemedText>
                   </View>
-                  <ThemedText type="small" style={styles.eventMessage}>
-                    {item.message}
-                  </ThemedText>
+                  {detail ? (
+                    <ThemedText type="smallBold" style={styles.eventMessage} numberOfLines={1}>
+                      {detail}
+                    </ThemedText>
+                  ) : (
+                    <ThemedText type="small" style={styles.eventMessage}>
+                      {item.message}
+                    </ThemedText>
+                  )}
                   {item.devices?.name && (
                     <ThemedText themeColor="textSecondary" type="small">
                       {item.devices.name}

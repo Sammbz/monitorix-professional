@@ -296,15 +296,50 @@ def run_usb_watcher(*, stop_event: threading.Event, interval_seconds: float, cal
 
 
 def _is_user_app(name: str, exe_path: str) -> bool:
+    # Note: deliberately does NOT exclude WindowsApps\Microsoft.* — that
+    # path is where legitimate UWP apps a user opens (Calculator, Photos,
+    # Solitaire, Camera, ...) are installed. The visible-window check in
+    # _visible_window_pids() is what actually keeps background noise out;
+    # this is just a backstop for known invisible system helpers.
     normalized_name = name.lower()
     normalized_exe = exe_path.replace("/", "\\").lower()
     if normalized_name in SYSTEM_PROCESS_NAMES:
         return False
     if normalized_exe.startswith("c:\\windows\\") or "\\windows\\system32\\" in normalized_exe:
         return False
-    if "\\windowsapps\\microsoft." in normalized_exe:
-        return False
     return True
+
+
+_UWP_FRAME_HOST_PROCESS = "applicationframehost.exe"
+
+
+def _process_name(pid: int) -> str:
+    try:
+        return psutil.Process(pid).name().lower()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        return ""
+
+
+def _resolve_uwp_owner_pid(user32: Any, hwnd: int, framehost_pid: int) -> int:
+    """UWP apps (Solitaire, Camera, Photos, ...) are hosted inside
+    ApplicationFrameHost.exe, so their top-level window's owner PID is the
+    host, not the app. The actual app runs as a child window owned by a
+    different process — find that one instead. Falls back to the host PID
+    if no such child is found (same behavior as before this existed)."""
+    real_pid = framehost_pid
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def enum_child(child_hwnd: int, _lparam: int) -> bool:
+        nonlocal real_pid
+        child_pid = ctypes.c_uint32()
+        user32.GetWindowThreadProcessId(child_hwnd, ctypes.byref(child_pid))
+        if child_pid.value and child_pid.value != framehost_pid:
+            real_pid = int(child_pid.value)
+            return False
+        return True
+
+    user32.EnumChildWindows(hwnd, enum_child, 0)
+    return real_pid
 
 
 def _visible_window_pids() -> set[int]:
@@ -322,7 +357,10 @@ def _visible_window_pids() -> set[int]:
         if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
             pid = ctypes.c_uint32()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            pids.add(int(pid.value))
+            owner_pid = int(pid.value)
+            if _process_name(owner_pid) == _UWP_FRAME_HOST_PROCESS:
+                owner_pid = _resolve_uwp_owner_pid(user32, hwnd, owner_pid)
+            pids.add(owner_pid)
         return True
 
     user32.EnumWindows(enum_handler, 0)
