@@ -8,6 +8,7 @@ export const Colors = {
     border: '#E5E7EB',
     accent: '#0D9488',
     danger: '#DC2626',
+    success: '#16A34A',
   },
   dark: {
     text: '#EDEEF0',
@@ -18,6 +19,7 @@ export const Colors = {
     border: '#24262B',
     accent: '#2DD4BF',
     danger: '#F87171',
+    success: '#4ADE80',
   },
 } as const;
 
@@ -62,3 +64,14 @@ export const Radius = {
 
 export const BottomTabInset = 0;
 export const MaxContentWidth = 800;
+
+// Wide (desktop web) layout: breakpoint where the dashboard switches from
+// the stacked mobile layout to devices | events | details columns, and the
+// content cap in that mode.
+export const WideBreakpoint = 1024;
+export const MaxContentWidthWide = 1440;
+
+// A device counts as online if its last heartbeat is fresher than this.
+// The agent pings every ~30s (HEARTBEAT_INTERVAL_SECONDS); 3 intervals of
+// slack absorbs slow networks and clock skew.
+export const DeviceOnlineThresholdMs = 90_000;

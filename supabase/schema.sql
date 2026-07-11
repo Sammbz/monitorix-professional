@@ -50,8 +50,14 @@ create table if not exists public.devices (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null,
   created_at timestamptz not null default now(),
+  -- Bumped by submit_event/agent_heartbeat; the dashboard derives the
+  -- online/offline pill from how recent this is.
+  last_seen_at timestamptz,
   unique (organization_id, name)
 );
+
+-- Idempotent migration for databases created before last_seen_at existed.
+alter table public.devices add column if not exists last_seen_at timestamptz;
 
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
@@ -278,11 +284,47 @@ begin
   values (p_device_id, p_event_type, p_message, coalesce(p_metadata, '{}'::jsonb))
   returning id into v_event_id;
 
+  update public.devices set last_seen_at = now() where id = p_device_id;
+
   return v_event_id;
 end;
 $$;
 
 grant execute on function public.submit_event(text, uuid, text, text, jsonb) to anon, authenticated;
+
+-- Lightweight liveness ping: bumps last_seen_at without writing an event, so
+-- an idle-but-running agent still shows as online in the dashboard.
+create or replace function public.agent_heartbeat(p_token text, p_device_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org_id uuid;
+  v_device_org_id uuid;
+begin
+  select organization_id into v_org_id
+  from public.enrollment_tokens
+  where token = p_token and not revoked;
+
+  if v_org_id is null then
+    raise exception 'Invalid or revoked enrollment token';
+  end if;
+
+  select organization_id into v_device_org_id
+  from public.devices
+  where id = p_device_id;
+
+  if v_device_org_id is null or v_device_org_id != v_org_id then
+    raise exception 'Device does not belong to this token''s organization';
+  end if;
+
+  update public.devices set last_seen_at = now() where id = p_device_id;
+end;
+$$;
+
+grant execute on function public.agent_heartbeat(text, uuid) to anon, authenticated;
 
 -- Enable Realtime so the dashboard can subscribe to live inserts.
 do $$

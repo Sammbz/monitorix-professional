@@ -17,6 +17,7 @@ export type Device = {
   organization_id: string;
   name: string;
   created_at: string;
+  last_seen_at: string | null;
 };
 
 export type EnrollmentToken = {

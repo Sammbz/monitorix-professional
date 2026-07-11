@@ -65,6 +65,27 @@ def run_event_sender(
         spool.release(retry_ids)
 
 
+def run_heartbeat(
+    *,
+    stop_event: threading.Event,
+    client: SupabaseRestClient,
+    device_name: str,
+    device_id: str | None,
+    interval_seconds: float,
+) -> None:
+    """Pings agent_heartbeat so the dashboard shows this device as online
+    even when there is no user activity to report. enroll_device is
+    idempotent, so retrying the device id lookup here is safe even if the
+    sender thread is doing the same."""
+    while not stop_event.wait(interval_seconds):
+        try:
+            if not device_id:
+                device_id = client.get_or_create_device_id(device_name)
+            client.heartbeat(device_id)
+        except Exception:
+            logger.debug("Heartbeat failed; will retry", exc_info=True)
+
+
 def main() -> int:
     config = load_config()
     configure_logging(config.log_level)
@@ -118,6 +139,20 @@ def main() -> int:
     )
     sender_thread.start()
 
+    heartbeat_thread = threading.Thread(
+        target=run_heartbeat,
+        kwargs={
+            "stop_event": stop_event,
+            "client": client,
+            "device_name": config.device_name,
+            "device_id": device_id,
+            "interval_seconds": config.heartbeat_interval_seconds,
+        },
+        name="heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+
     observer = run_file_watcher(
         watch_paths=config.watch_paths,
         recursive=config.file_watch_recursive,
@@ -170,6 +205,7 @@ def main() -> int:
         stop_event.set()
         usb_thread.join(timeout=10)
         process_thread.join(timeout=10)
+        heartbeat_thread.join(timeout=10)
 
         enqueue("AGENT_STOPPED", "Monitoring agent stopped", {})
         sender_thread.join(timeout=10)

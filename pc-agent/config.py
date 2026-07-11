@@ -37,6 +37,7 @@ class Config:
     process_poll_interval_seconds: float
     process_min_visible_seconds: float
     process_only_user_apps: bool
+    heartbeat_interval_seconds: float
     supabase_timeout_seconds: float
     log_level: str
 
@@ -97,6 +98,7 @@ def load_config() -> Config:
         process_poll_interval_seconds=max(_as_float(os.getenv("PROCESS_POLL_INTERVAL_SECONDS"), 2.0), 0.2),
         process_min_visible_seconds=max(_as_float(os.getenv("PROCESS_MIN_VISIBLE_SECONDS"), 6.0), 0.5),
         process_only_user_apps=_as_bool(os.getenv("PROCESS_ONLY_USER_APPS"), True),
+        heartbeat_interval_seconds=max(_as_float(os.getenv("HEARTBEAT_INTERVAL_SECONDS"), 30.0), 5.0),
         supabase_timeout_seconds=max(_as_float(os.getenv("SUPABASE_TIMEOUT_SECONDS"), 10.0), 1.0),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
     )

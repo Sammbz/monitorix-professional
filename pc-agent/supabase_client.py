@@ -49,6 +49,11 @@ class SupabaseRestClient:
             raise RuntimeError("enroll_device did not return a device id")
         return str(device_id)
 
+    def heartbeat(self, device_id: str) -> None:
+        """Bumps the device's last_seen_at without writing an event, so an
+        idle machine still shows as online in the dashboard."""
+        self._rpc("agent_heartbeat", {"p_token": self._token, "p_device_id": device_id})
+
     def insert_event(
         self,
         *,
