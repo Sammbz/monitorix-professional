@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -5,6 +6,7 @@ import { ThemedView } from '@/components/themed-view';
 import { CategoryColors, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categorizeEvent } from '@/lib/event-categories';
+import { getEventIcon } from '@/lib/event-icons';
 import type { JsonValue, MonitoringEvent } from '@/types/monitoring';
 
 type EventWithDevice = MonitoringEvent & { devices: { name: string } | null };
@@ -46,9 +48,18 @@ export function EventDetails({ event }: { event: EventWithDevice | null }) {
 
   return (
     <ThemedView type="backgroundElement" style={[styles.card, { borderColor: theme.border }]}>
-      <ThemedText type="code" style={{ color: CategoryColors[category] }}>
-        {event.event_type}
-      </ThemedText>
+      <View style={styles.titleRow}>
+        <View style={[styles.iconBox, { backgroundColor: CategoryColors[category] + '22' }]}>
+          <MaterialCommunityIcons
+            name={getEventIcon(event.event_type, event.metadata)}
+            size={20}
+            color={CategoryColors[category]}
+          />
+        </View>
+        <ThemedText type="code" style={{ color: CategoryColors[category] }}>
+          {event.event_type}
+        </ThemedText>
+      </View>
       <ThemedText type="smallBold">{event.message}</ThemedText>
 
       <View style={styles.metaBlock}>
@@ -99,6 +110,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.three,
     gap: Spacing.two,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  iconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.small,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metaBlock: {
     gap: Spacing.one,
