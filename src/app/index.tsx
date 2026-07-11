@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EventDetails } from '@/components/dashboard/event-details';
 import { StatsRow } from '@/components/dashboard/stats-row';
 import { EnrollmentTokenCard } from '@/components/enrollment-token-card';
+import { InviteAdminCard } from '@/components/invite-admin-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import {
@@ -20,6 +21,7 @@ import { useDashboard } from '@/hooks/use-dashboard';
 import { useNow } from '@/hooks/use-now';
 import { useOrganization } from '@/hooks/use-organization';
 import { useTheme } from '@/hooks/use-theme';
+import { useUsbAlerts } from '@/hooks/use-usb-alerts';
 import { isDeviceOnline } from '@/lib/device-status';
 import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory, getEventDetail } from '@/lib/event-categories';
 import type { Device } from '@/types/monitoring';
@@ -46,9 +48,11 @@ export default function DashboardScreen() {
     () => (selectedCategory === 'all' ? null : eventTypesForCategory(selectedCategory)),
     [selectedCategory]
   );
+  const usbAlerts = useUsbAlerts();
   const { devices, events, eventsToday, loading, error } = useDashboard({
     deviceId: selectedDeviceId,
     categoryEventTypes,
+    onNewEvent: usbAlerts.handleEvent,
   });
 
   const onlineCount = useMemo(() => devices.filter((d) => isDeviceOnline(d, now)).length, [devices, now]);
@@ -72,11 +76,20 @@ export default function DashboardScreen() {
           {session?.user.email}
         </ThemedText>
       </View>
-      <Pressable onPress={signOut}>
-        <ThemedText type="link" themeColor="textSecondary">
-          Sign out
-        </ThemedText>
-      </Pressable>
+      <View style={styles.headerActions}>
+        {usbAlerts.supported && (
+          <Pressable onPress={usbAlerts.toggle}>
+            <ThemedText type="link" themeColor={usbAlerts.enabled ? 'accent' : 'textSecondary'}>
+              {usbAlerts.enabled ? 'USB alerts: on' : 'USB alerts: off'}
+            </ThemedText>
+          </Pressable>
+        )}
+        <Pressable onPress={signOut}>
+          <ThemedText type="link" themeColor="textSecondary">
+            Sign out
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   );
 
@@ -252,7 +265,12 @@ export default function DashboardScreen() {
               </ThemedText>
               {devices.length === 0 && !loading ? emptyDevices : devices.map(renderDeviceRow)}
               <View style={styles.tokenCardSlot}>
-                {organization && <EnrollmentTokenCard organizationId={organization.id} />}
+                {organization && (
+                  <>
+                    <EnrollmentTokenCard organizationId={organization.id} />
+                    <InviteAdminCard organizationId={organization.id} />
+                  </>
+                )}
               </View>
             </View>
             <View style={styles.eventsColumn}>
@@ -280,7 +298,12 @@ export default function DashboardScreen() {
             {error}
           </ThemedText>
         )}
-        {organization && <EnrollmentTokenCard organizationId={organization.id} />}
+        {organization && (
+          <>
+            <EnrollmentTokenCard organizationId={organization.id} />
+            <InviteAdminCard organizationId={organization.id} />
+          </>
+        )}
         <StatsRow deviceCount={devices.length} onlineCount={onlineCount} eventsToday={eventsToday} />
         {devices.length === 0 && !loading ? emptyDevices : deviceChips}
         {categoryTabs}
@@ -314,6 +337,11 @@ const styles = StyleSheet.create({
   eyebrow: {
     letterSpacing: 2,
     marginBottom: Spacing.half,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
   },
   columns: {
     flex: 1,
@@ -356,6 +384,7 @@ const styles = StyleSheet.create({
   tokenCardSlot: {
     marginTop: 'auto',
     paddingBottom: Spacing.three,
+    gap: Spacing.two,
   },
   emptyDevices: {
     borderRadius: Radius.medium,

@@ -43,6 +43,23 @@ create table if not exists public.enrollment_tokens (
   created_at timestamptz not null default now()
 );
 
+-- Single-use codes for inviting another signed-up user into an org (the
+-- safe replacement for letting users insert their own memberships).
+create table if not exists public.invitations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  code text not null unique default encode(gen_random_bytes(12), 'hex'),
+  role text not null default 'admin' check (role in ('admin', 'employee')),
+  created_by uuid references auth.users(id) on delete set null,
+  accepted_by uuid references auth.users(id) on delete set null,
+  accepted_at timestamptz,
+  expires_at timestamptz not null default now() + interval '7 days',
+  revoked boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_invitations_org_id on public.invitations(organization_id);
+
 -- Devices & events --------------------------------------------------------------
 
 create table if not exists public.devices (
@@ -151,6 +168,27 @@ create policy "update own org tokens" on public.enrollment_tokens
   using (public.is_org_admin(organization_id))
   with check (public.is_org_admin(organization_id));
 
+-- invitations: only org admins can see/create/revoke them. Direct inserts
+-- are fine here (unlike organizations): the SELECT policy already passes
+-- for the admin creating the row, so INSERT ... RETURNING works.
+alter table public.invitations enable row level security;
+
+drop policy if exists "select own org invitations" on public.invitations;
+create policy "select own org invitations" on public.invitations
+  for select to authenticated
+  using (public.is_org_admin(organization_id));
+
+drop policy if exists "insert own org invitations" on public.invitations;
+create policy "insert own org invitations" on public.invitations
+  for insert to authenticated
+  with check (public.is_org_admin(organization_id) and created_by = auth.uid());
+
+drop policy if exists "update own org invitations" on public.invitations;
+create policy "update own org invitations" on public.invitations
+  for update to authenticated
+  using (public.is_org_admin(organization_id))
+  with check (public.is_org_admin(organization_id));
+
 -- devices: admins see/manage devices in their organization. No insert policy
 -- on purpose — devices are only ever created via enroll_device() below.
 drop policy if exists "select org devices" on public.devices;
@@ -210,6 +248,56 @@ end;
 $$;
 
 grant execute on function public.create_organization(text) to authenticated;
+
+-- Joins the caller to an organization using a single-use invitation code.
+-- SECURITY DEFINER because the caller has no membership yet, so RLS would
+-- hide both the invitation and the org from them.
+create or replace function public.accept_invitation(p_code text)
+returns public.organizations
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_invitation public.invitations;
+  v_org public.organizations;
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+
+  select * into v_invitation
+  from public.invitations
+  where code = p_code
+    and not revoked
+    and accepted_by is null
+    and expires_at > now()
+  for update;
+
+  if v_invitation.id is null then
+    raise exception 'Invalid, expired, or already used invitation code';
+  end if;
+
+  if exists (
+    select 1 from public.memberships
+    where organization_id = v_invitation.organization_id and user_id = auth.uid()
+  ) then
+    raise exception 'You are already a member of this organization';
+  end if;
+
+  insert into public.memberships (organization_id, user_id, role)
+  values (v_invitation.organization_id, auth.uid(), v_invitation.role);
+
+  update public.invitations
+  set accepted_by = auth.uid(), accepted_at = now()
+  where id = v_invitation.id;
+
+  select * into v_org from public.organizations where id = v_invitation.organization_id;
+  return v_org;
+end;
+$$;
+
+grant execute on function public.accept_invitation(text) to authenticated;
 
 -- RPC functions for the PC agent (token-based, no personal login) ---------------
 

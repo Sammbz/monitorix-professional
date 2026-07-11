@@ -9,6 +9,7 @@ type OrganizationContextValue = {
   loading: boolean;
   error: string | null;
   createOrganization: (name: string) => Promise<{ error: string | null }>;
+  joinOrganization: (code: string) => Promise<{ error: string | null }>;
   refetch: () => Promise<void>;
 };
 
@@ -65,9 +66,25 @@ export function OrganizationProvider({ children }: PropsWithChildren) {
     [session]
   );
 
+  const joinOrganization = useCallback(
+    async (code: string): Promise<{ error: string | null }> => {
+      if (!session) return { error: 'Not signed in' };
+
+      const { data, error: rpcError } = await supabase.rpc('accept_invitation', { p_code: code.trim() });
+
+      if (rpcError || !data) {
+        return { error: rpcError?.message ?? 'Could not join the organization' };
+      }
+
+      setOrganization(data as Organization);
+      return { error: null };
+    },
+    [session]
+  );
+
   const value = useMemo<OrganizationContextValue>(
-    () => ({ organization, loading, error, createOrganization, refetch }),
-    [organization, loading, error, createOrganization, refetch]
+    () => ({ organization, loading, error, createOrganization, joinOrganization, refetch }),
+    [organization, loading, error, createOrganization, joinOrganization, refetch]
   );
 
   return <OrganizationContext.Provider value={value}>{children}</OrganizationContext.Provider>;

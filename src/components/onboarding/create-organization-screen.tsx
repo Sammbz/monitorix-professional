@@ -15,11 +15,12 @@ const BUTTON_LABEL_COLOR = { light: '#F5FFFE', dark: '#04201C' } as const;
 
 export function CreateOrganizationScreen() {
   const { signOut } = useAuth();
-  const { createOrganization } = useOrganization();
+  const { createOrganization, joinOrganization } = useOrganization();
   const theme = useTheme();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const [name, setName] = useState('');
-  const [focused, setFocused] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [focused, setFocused] = useState<'name' | 'code' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +31,16 @@ export function CreateOrganizationScreen() {
     setSubmitting(false);
     if (createError) {
       setError(createError);
+    }
+  }
+
+  async function handleJoin() {
+    setError(null);
+    setSubmitting(true);
+    const { error: joinError } = await joinOrganization(inviteCode);
+    setSubmitting(false);
+    if (joinError) {
+      setError(joinError);
     }
   }
 
@@ -51,19 +62,13 @@ export function CreateOrganizationScreen() {
           <TextInput
             value={name}
             onChangeText={setName}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onFocus={() => setFocused('name')}
+            onBlur={() => setFocused(null)}
             placeholder="Organization name"
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="words"
-            style={[styles.input, { color: theme.text, borderColor: focused ? theme.accent : theme.border }]}
+            style={[styles.input, { color: theme.text, borderColor: focused === 'name' ? theme.accent : theme.border }]}
           />
-
-          {error && (
-            <ThemedText themeColor="danger" type="small">
-              {error}
-            </ThemedText>
-          )}
 
           <Pressable
             onPress={handleSubmit}
@@ -79,6 +84,44 @@ export function CreateOrganizationScreen() {
               {submitting ? 'Please wait…' : 'Continue'}
             </ThemedText>
           </Pressable>
+
+          <ThemedText type="small" themeColor="textSecondary" style={styles.divider}>
+            or join an existing organization
+          </ThemedText>
+
+          <TextInput
+            value={inviteCode}
+            onChangeText={setInviteCode}
+            onFocus={() => setFocused('code')}
+            onBlur={() => setFocused(null)}
+            placeholder="Invite code"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.input, { color: theme.text, borderColor: focused === 'code' ? theme.accent : theme.border }]}
+          />
+
+          <Pressable
+            onPress={handleJoin}
+            disabled={submitting || !inviteCode.trim()}
+            style={({ pressed }) => [
+              styles.button,
+              styles.secondaryButton,
+              {
+                borderColor: theme.accent,
+                opacity: submitting || !inviteCode.trim() ? 0.4 : pressed ? 0.85 : 1,
+              },
+            ]}>
+            <ThemedText type="smallBold" themeColor="accent">
+              {submitting ? 'Please wait…' : 'Join with code'}
+            </ThemedText>
+          </Pressable>
+
+          {error && (
+            <ThemedText themeColor="danger" type="small">
+              {error}
+            </ThemedText>
+          )}
 
           <Pressable onPress={signOut} style={styles.signOutButton}>
             <ThemedText type="link" themeColor="textSecondary">
@@ -136,6 +179,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     alignItems: 'center',
     marginTop: Spacing.one,
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+  },
+  divider: {
+    textAlign: 'center',
+    marginTop: Spacing.two,
   },
   signOutButton: {
     alignItems: 'center',

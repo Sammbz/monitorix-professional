@@ -9,6 +9,9 @@ type EventWithDevice = MonitoringEvent & { devices: { name: string } | null };
 type DashboardFilters = {
   deviceId: string | null;
   categoryEventTypes: string[] | null;
+  /** Fires for every realtime event in the org, before the view filters —
+   * for org-wide side effects like alert notifications. */
+  onNewEvent?: (event: EventWithDevice) => void;
 };
 
 const RECENT_EVENTS_LIMIT = 50;
@@ -19,7 +22,7 @@ function startOfTodayIso() {
   return start.toISOString();
 }
 
-export function useDashboard({ deviceId, categoryEventTypes }: DashboardFilters) {
+export function useDashboard({ deviceId, categoryEventTypes, onNewEvent }: DashboardFilters) {
   const { session } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [events, setEvents] = useState<EventWithDevice[]>([]);
@@ -27,6 +30,9 @@ export function useDashboard({ deviceId, categoryEventTypes }: DashboardFilters)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const devicesRef = useRef<Device[]>([]);
+  // Ref so a new callback identity doesn't tear down the realtime channel.
+  const onNewEventRef = useRef(onNewEvent);
+  onNewEventRef.current = onNewEvent;
 
   useEffect(() => {
     let cancelled = false;
@@ -76,16 +82,17 @@ export function useDashboard({ deviceId, categoryEventTypes }: DashboardFilters)
         { event: 'INSERT', schema: 'public', table: 'events' },
         (payload) => {
           const newEvent = payload.new as MonitoringEvent;
-          // Org-wide tally, counted before the view filters below.
+          const device = devicesRef.current.find((d) => d.id === newEvent.device_id);
+          const enriched: EventWithDevice = { ...newEvent, devices: device ? { name: device.name } : null };
+
+          // Org-wide side effects, before the view filters below.
           setEventsToday((prev) => (prev === null ? prev : prev + 1));
+          onNewEventRef.current?.(enriched);
 
           if (deviceId && newEvent.device_id !== deviceId) return;
           if (categoryEventTypes && !categoryEventTypes.includes(newEvent.event_type)) return;
 
-          const device = devicesRef.current.find((d) => d.id === newEvent.device_id);
-          setEvents((prev) =>
-            [{ ...newEvent, devices: device ? { name: device.name } : null }, ...prev].slice(0, RECENT_EVENTS_LIMIT)
-          );
+          setEvents((prev) => [enriched, ...prev].slice(0, RECENT_EVENTS_LIMIT));
         }
       )
       .on(
