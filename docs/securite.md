@@ -95,24 +95,47 @@ Même avec un token valide, les RPC plafonnent désormais ce qui peut être
 - `nodeIntegration: false` et `contextIsolation: true` : une faille dans la
   page ne peut pas atteindre le système de fichiers ni Node.
 
+## Rate limiting (en place)
+
+Compteurs à fenêtre fixe stockés dans Postgres (`rpc_rate_limits`, table sous
+RLS sans politique — seules les fonctions serveur y accèdent). Trois niveaux :
+
+| Protection | Clé | Limite |
+|---|---|---|
+| Force brute sur les tokens | IP (`x-forwarded-for`) | Blocage après 20 tokens invalides / 15 min |
+| Enrôlements | organisation | 120 / heure |
+| Événements | appareil | 600 / 10 min (~1/s soutenu) |
+| Heartbeats | appareil | 10 / min (l'agent en envoie 2) |
+
+Détails d'implémentation :
+
+- Les échecs d'authentification sont comptés **par IP** et vérifiés *avant*
+  la validation du token (`assert_not_blocked`), sans compter les appels
+  légitimes — un bureau derrière un NAT avec 50 agents n'est jamais gêné.
+- Les clés de compteur ne contiennent **jamais le token brut** (uniquement
+  des ids d'org/appareil et des IP).
+- Nettoyage opportuniste : les clés inactives depuis 2 jours sont purgées.
+- Côté agent, `main.py` applique un backoff de 5 s quand un lot entier
+  échoue, pour ne pas marteler l'API en cas de limite atteinte ou de coupure.
+
+Limite connue : si l'en-tête `x-forwarded-for` est absent, tous les échecs
+partagent un seau `unknown` — un attaquant s'y bloque aussi lui-même.
+
 ## Ce qui reste à faire avant la production
 
 Par ordre de priorité :
 
-1. **Rate limiting** sur les RPC publics (`enroll_device`, `submit_event`) —
-   aujourd'hui un token valide peut appeler sans limite. À faire via une
-   edge function, un reverse proxy, ou l'offre payante de Supabase.
-2. **Rotation/expiration** des tokens d'enrôlement (ils sont éternels tant
+1. **Rotation/expiration** des tokens d'enrôlement (ils sont éternels tant
    que non révoqués). Ajouter un `expires_at` comme pour les invitations.
-3. **Confirmation d'email obligatoire** à l'inscription (réglage Supabase
+2. **Confirmation d'email obligatoire** à l'inscription (réglage Supabase
    Auth) + politique de mot de passe forte.
-4. **Audit log** des actions admin (qui a révoqué un token, supprimé un
+3. **Audit log** des actions admin (qui a révoqué un token, supprimé un
    appareil, invité qui).
-5. **Chiffrement au repos** des chemins de fichiers sensibles si le contenu
+4. **Chiffrement au repos** des chemins de fichiers sensibles si le contenu
    surveillé est confidentiel (aujourd'hui les events sont en clair en base).
-6. **Revue RGPD** : rétention configurable + purge automatique, export et
+5. **Revue RGPD** : rétention configurable + purge automatique, export et
    suppression des données sur demande (droit à l'effacement).
-7. **Signature de code** de l'installateur Windows et de l'agent (évite les
+6. **Signature de code** de l'installateur Windows et de l'agent (évite les
    alertes SmartScreen/antivirus et l'altération du binaire).
 
 ## Rappel : procédure après un changement de schéma

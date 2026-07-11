@@ -70,6 +70,11 @@ def run_event_sender(
         spool.ack(sent_ids)
         spool.release(retry_ids)
 
+        # Whole batch failed (offline, or server-side rate limit): back off
+        # instead of hammering the API with immediate retries.
+        if retry_ids and not sent_ids:
+            time.sleep(5)
+
 
 def run_heartbeat(
     *,

@@ -316,6 +316,101 @@ $$;
 
 grant execute on function public.events_activity(int) to authenticated;
 
+-- Rate limiting -----------------------------------------------------------------
+--
+-- Fixed-window counters, entirely in Postgres so no extra infrastructure is
+-- needed. Three protections on the public (anon-callable) RPCs:
+--   1. an IP that keeps presenting invalid tokens gets blocked (brute force);
+--   2. enrollments are capped per organization;
+--   3. events/heartbeats are capped per device.
+-- Keys never contain the raw token (only org/device ids and IPs).
+
+create table if not exists public.rpc_rate_limits (
+  key text primary key,
+  window_start timestamptz not null default now(),
+  call_count int not null default 0
+);
+
+-- Locked down: only the SECURITY DEFINER functions below ever touch it.
+alter table public.rpc_rate_limits enable row level security;
+
+-- Increment the counter for a key, resetting it when its window expired.
+-- Returns the count within the current window. Internal helper — no grants.
+create or replace function public.bump_rate_counter(p_key text, p_window_seconds int)
+returns int
+language plpgsql
+as $$
+declare
+  v_count int;
+begin
+  insert into public.rpc_rate_limits as r (key, window_start, call_count)
+  values (p_key, now(), 1)
+  on conflict (key) do update set
+    call_count = case
+      when r.window_start > now() - make_interval(secs => p_window_seconds)
+      then r.call_count + 1 else 1 end,
+    window_start = case
+      when r.window_start > now() - make_interval(secs => p_window_seconds)
+      then r.window_start else now() end
+  returning call_count into v_count;
+
+  -- Opportunistic cleanup so stale keys (old IPs) don't accumulate forever.
+  if random() < 0.001 then
+    delete from public.rpc_rate_limits where window_start < now() - interval '2 days';
+  end if;
+
+  return v_count;
+end;
+$$;
+
+-- Bump + enforce: raises once the cap for the window is exceeded.
+create or replace function public.check_rate_limit(p_key text, p_max_calls int, p_window_seconds int)
+returns void
+language plpgsql
+as $$
+begin
+  if public.bump_rate_counter(p_key, p_window_seconds) > p_max_calls then
+    raise exception 'Rate limit exceeded, try again later';
+  end if;
+end;
+$$;
+
+-- Read-only check used BEFORE token validation: blocks callers that already
+-- accumulated too many auth failures, without counting legitimate calls.
+create or replace function public.assert_not_blocked(p_key text, p_max_failures int, p_window_seconds int)
+returns void
+language plpgsql
+stable
+as $$
+declare
+  v_count int;
+begin
+  select call_count into v_count
+  from public.rpc_rate_limits
+  where key = p_key
+    and window_start > now() - make_interval(secs => p_window_seconds);
+
+  if coalesce(v_count, 0) >= p_max_failures then
+    raise exception 'Too many failed attempts, try again later';
+  end if;
+end;
+$$;
+
+-- Best-effort client IP as seen by the API gateway. Falls back to a shared
+-- bucket when the header is absent (then abusers and their own retries share
+-- the same block).
+create or replace function public.client_ip()
+returns text
+language sql
+stable
+as $$
+  select coalesce(
+    nullif(trim(split_part(
+      (current_setting('request.headers', true))::json ->> 'x-forwarded-for', ',', 1)), ''),
+    'unknown'
+  );
+$$;
+
 -- RPC functions for the PC agent (token-based, no personal login) ---------------
 
 create or replace function public.enroll_device(p_token text, p_device_name text)
@@ -334,13 +429,21 @@ begin
     raise exception 'Device name must be 1-120 characters';
   end if;
 
+  -- Brute force: an IP with 20+ invalid-token attempts in 15 min is blocked.
+  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+
   select organization_id into v_org_id
   from public.enrollment_tokens
   where token = p_token and not revoked;
 
   if v_org_id is null then
+    perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
     raise exception 'Invalid or revoked enrollment token';
   end if;
+
+  -- Cap enrollments per organization (120/hour is far above any legitimate
+  -- mass deployment, but stops a leaked token creating devices in a loop).
+  perform public.check_rate_limit('enroll:org:' || v_org_id::text, 120, 3600);
 
   select id into v_device_id
   from public.devices
@@ -387,11 +490,14 @@ begin
     raise exception 'Metadata must be at most 16 KB';
   end if;
 
+  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+
   select organization_id into v_org_id
   from public.enrollment_tokens
   where token = p_token and not revoked;
 
   if v_org_id is null then
+    perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
     raise exception 'Invalid or revoked enrollment token';
   end if;
 
@@ -402,6 +508,10 @@ begin
   if v_device_org_id is null or v_device_org_id != v_org_id then
     raise exception 'Device does not belong to this token''s organization';
   end if;
+
+  -- Cap events per device: 600 per 10 minutes (~1/second sustained) absorbs
+  -- real activity bursts while bounding what a hijacked device can write.
+  perform public.check_rate_limit('events:device:' || p_device_id::text, 600, 600);
 
   insert into public.events (device_id, event_type, message, metadata)
   values (p_device_id, p_event_type, p_message, coalesce(p_metadata, '{}'::jsonb))
@@ -427,11 +537,14 @@ declare
   v_org_id uuid;
   v_device_org_id uuid;
 begin
+  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+
   select organization_id into v_org_id
   from public.enrollment_tokens
   where token = p_token and not revoked;
 
   if v_org_id is null then
+    perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
     raise exception 'Invalid or revoked enrollment token';
   end if;
 
@@ -442,6 +555,10 @@ begin
   if v_device_org_id is null or v_device_org_id != v_org_id then
     raise exception 'Device does not belong to this token''s organization';
   end if;
+
+  -- The agent pings every ~30s; 10/min leaves room without letting a rogue
+  -- client spam device updates.
+  perform public.check_rate_limit('hb:device:' || p_device_id::text, 10, 60);
 
   update public.devices set last_seen_at = now() where id = p_device_id;
 end;
