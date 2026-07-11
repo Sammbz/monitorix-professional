@@ -12,7 +12,11 @@ const REFRESH_MS = 60_000;
 const PLOT_HEIGHT = 64;
 
 type Bucket = { bucket: string; event_count: number };
-type Slot = { hourLabel: string; count: number };
+type Slot = { hourLabel: string; dateLabel: string; isMidnight: boolean; count: number };
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 /** One bar per hour over the last 24h. Tap a bar to read its exact
  * hour and count; the busiest hour is labeled directly. */
@@ -41,6 +45,8 @@ export function ActivityChart() {
         const slot = new Date(now.getTime() - i * 3_600_000);
         series.push({
           hourLabel: `${String(slot.getHours()).padStart(2, '0')}h`,
+          dateLabel: formatDate(slot),
+          isMidnight: slot.getHours() === 0,
           count: byHour.get(slot.getTime()) ?? 0,
         });
       }
@@ -70,7 +76,7 @@ export function ActivityChart() {
         </ThemedText>
         {readout ? (
           <ThemedText type="smallBold" themeColor="accent">
-            {readout.hourLabel} · {readout.count} event{readout.count === 1 ? '' : 's'}
+            {readout.dateLabel}, {readout.hourLabel} · {readout.count} event{readout.count === 1 ? '' : 's'}
           </ThemedText>
         ) : (
           <ThemedText type="small" themeColor="textSecondary">
@@ -120,6 +126,17 @@ export function ActivityChart() {
             )}
           </View>
         ))}
+      </View>
+
+      <View style={styles.dateRow}>
+        <ThemedText type="code" themeColor="textSecondary" style={styles.axisLabel}>
+          {slots[0].dateLabel}
+        </ThemedText>
+        {slots[slots.length - 1].dateLabel !== slots[0].dateLabel && (
+          <ThemedText type="code" themeColor="textSecondary" style={styles.axisLabel}>
+            {slots[slots.length - 1].dateLabel}
+          </ThemedText>
+        )}
       </View>
 
       <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
@@ -172,6 +189,10 @@ const styles = StyleSheet.create({
   },
   axisLabel: {
     fontSize: 10,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   hint: {
     fontSize: 11,
