@@ -1,0 +1,37 @@
+{
+  "name": "monitorix-desktop",
+  "productName": "Monitorix",
+  "version": "1.0.0",
+  "description": "Monitorix admin dashboard as a desktop app",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.monitorix.desktop",
+    "productName": "Monitorix",
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "dist"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "../assets/images/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  }
+}

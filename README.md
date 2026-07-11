@@ -40,6 +40,18 @@ npx expo start --web        # web (desktop) — or scan the QR code in Expo Go
 Environment: `.env` at the repo root provides `EXPO_PUBLIC_SUPABASE_URL` and
 `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 
+## Run the desktop app (Electron)
+
+The desktop app wraps the static web export in a native window:
+
+```bash
+npx expo export --platform web   # build the dashboard into dist/
+cd desktop
+npm install
+npm start                        # opens the Monitorix window
+npm run dist                     # (optional) build a Windows installer into desktop/release/
+```
+
 ## Run the PC agent
 
 See [`pc-agent/README.md`](pc-agent/README.md). Short version:

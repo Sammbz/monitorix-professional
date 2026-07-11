@@ -56,3 +56,6 @@ example
 # generated native folders
 /ios
 /android
+
+# desktop (Electron) build output
+desktop/release/
