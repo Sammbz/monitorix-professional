@@ -17,13 +17,16 @@ import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { SignInScreen } from '@/components/auth/sign-in-screen';
+import { CreateOrganizationScreen } from '@/components/onboarding/create-organization-screen';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { OrganizationProvider, useOrganization } from '@/hooks/use-organization';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const colorScheme = useColorScheme();
   const { session, initializing } = useAuth();
+  const { organization, loading: orgLoading } = useOrganization();
   const [fontsLoaded] = useFonts({
     IBMPlexSans_400Regular,
     IBMPlexSans_500Medium,
@@ -34,14 +37,20 @@ function RootNavigator() {
     IBMPlexMono_600SemiBold,
   });
 
-  if (initializing || !fontsLoaded) {
+  if (initializing || !fontsLoaded || (session && orgLoading)) {
     return null;
+  }
+
+  function renderScreen() {
+    if (!session) return <SignInScreen />;
+    if (!organization) return <CreateOrganizationScreen />;
+    return <Slot />;
   }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      {session ? <Slot /> : <SignInScreen />}
+      {renderScreen()}
     </ThemeProvider>
   );
 }
@@ -49,7 +58,9 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootNavigator />
+      <OrganizationProvider>
+        <RootNavigator />
+      </OrganizationProvider>
     </AuthProvider>
   );
 }

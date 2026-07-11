@@ -6,10 +6,24 @@ export type JsonValue =
   | { [key: string]: JsonValue | undefined }
   | JsonValue[];
 
+export type Organization = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
 export type Device = {
   id: string;
-  user_id: string;
+  organization_id: string;
   name: string;
+  created_at: string;
+};
+
+export type EnrollmentToken = {
+  id: string;
+  organization_id: string;
+  token: string;
+  revoked: boolean;
   created_at: string;
 };
 

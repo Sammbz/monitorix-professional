@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { EnrollmentTokenCard } from '@/components/enrollment-token-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CategoryColors, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
 import { useDashboard } from '@/hooks/use-dashboard';
+import { useOrganization } from '@/hooks/use-organization';
 import { useTheme } from '@/hooks/use-theme';
 import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory, getEventDetail } from '@/lib/event-categories';
 
@@ -19,6 +21,7 @@ function formatTimestamp(iso: string) {
 export default function DashboardScreen() {
   const theme = useTheme();
   const { session, signOut } = useAuth();
+  const { organization } = useOrganization();
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CategoryTabKey>('all');
 
@@ -39,6 +42,7 @@ export default function DashboardScreen() {
             <ThemedText type="code" themeColor="accent" style={styles.eyebrow}>
               MONITORIX
             </ThemedText>
+            <ThemedText type="smallBold">{organization?.name}</ThemedText>
             <ThemedText themeColor="textSecondary" type="small">
               {session?.user.email}
             </ThemedText>
@@ -55,6 +59,8 @@ export default function DashboardScreen() {
             {error}
           </ThemedText>
         )}
+
+        {organization && <EnrollmentTokenCard organizationId={organization.id} />}
 
         {devices.length === 0 && !loading ? (
           <ThemedView type="backgroundElement" style={[styles.emptyDevices, { borderColor: theme.border }]}>

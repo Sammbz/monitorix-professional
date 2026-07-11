@@ -7,18 +7,20 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Bundled so the agent works on a new PC with zero setup beyond signing in —
-# no .env to copy over by hand. This is the anon key, the same one baked
-# into the mobile app's client bundle: it is meant to be public and grants
-# nothing by itself. Row Level Security (see supabase/schema.sql) is what
-# actually restricts access, scoped to whichever account signs in — not
-# this key. Override via SUPABASE_URL/SUPABASE_ANON_KEY env vars if you ever
-# need to point the agent at a different Supabase project.
-DEFAULT_SUPABASE_URL = "https://uwjfekekxwoqemhlvqbh.supabase.co"
+# Bundled so the agent works on a new PC with zero setup beyond an
+# enrollment token — no .env to copy over by hand for these two. This is
+# the anon key, the same one baked into the mobile app's client bundle: it
+# is meant to be public and grants nothing by itself. The enrollment token
+# (required, see ENROLLMENT_TOKEN below) is what actually authorizes this
+# agent to write devices/events for one specific organization — Row Level
+# Security (see supabase/schema.sql) never lets the anon key alone touch
+# anything. Override via SUPABASE_URL/SUPABASE_ANON_KEY env vars if you
+# ever need to point the agent at a different Supabase project.
+DEFAULT_SUPABASE_URL = "https://yhtxagwfeuyzserwdccr.supabase.co"
 DEFAULT_SUPABASE_ANON_KEY = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3amZla2VreHdvcWVtaGx2cWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0MTg2MTcsImV4cCI6MjA5ODk5NDYxN30."
-    "WYZn_n5ZSEU3KRNjNKDtuNYZ9esaD0XuarAAsl77Szw"
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlodHhhZ3dmZXV5enNlcndkY2NyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg5NzQsImV4cCI6MjA5OTMzNDk3NH0."
+    "WD2oSpFCNNq6riUg33h1-7rqO70VivrQbHzuM6PhraY"
 )
 
 
@@ -26,6 +28,7 @@ DEFAULT_SUPABASE_ANON_KEY = (
 class Config:
     supabase_url: str
     supabase_anon_key: str
+    enrollment_token: str
     device_name: str
     watch_paths: tuple[Path, ...]
     file_watch_recursive: bool
@@ -53,6 +56,13 @@ def _as_float(value: str | None, default: float) -> float:
         return default
 
 
+def _required(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"Missing required environment variable: {name}")
+    return value
+
+
 def _default_watch_paths() -> tuple[Path, ...]:
     home = Path.home()
     candidates = (home / "Desktop", home / "Documents", home / "Downloads")
@@ -78,6 +88,7 @@ def load_config() -> Config:
     return Config(
         supabase_url=os.getenv("SUPABASE_URL", "").strip() or DEFAULT_SUPABASE_URL,
         supabase_anon_key=os.getenv("SUPABASE_ANON_KEY", "").strip() or DEFAULT_SUPABASE_ANON_KEY,
+        enrollment_token=_required("ENROLLMENT_TOKEN"),
         device_name=os.getenv("DEVICE_NAME", "").strip() or platform.node() or "pc-agent",
         watch_paths=_parse_watch_paths(os.getenv("WATCH_PATHS")),
         file_watch_recursive=_as_bool(os.getenv("FILE_WATCH_RECURSIVE"), True),

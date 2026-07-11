@@ -1,10 +1,10 @@
 # pc-agent
 
-Monitors this PC and reports events to the Monitorix Supabase project:
-file/folder changes in watched directories, USB drive/device insert-remove,
-and application open/close.
+Monitors this PC and reports events to your organization's Monitorix
+dashboard: file/folder changes in watched directories, USB drive/device
+insert-remove, and application open/close.
 
-## Setup — same account, another PC
+## Setup — deploy to another PC
 
 Copy the `pc-agent/` folder (or clone the repo) onto the new machine, then:
 
@@ -13,33 +13,35 @@ cd pc-agent
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
+```
+
+Fill in `.env`:
+
+- `ENROLLMENT_TOKEN` — get this from the admin dashboard (Organization >
+  Enrollment tokens). One token can be reused across every machine in the
+  organization; there's no per-employee login.
+
+Then:
+
+```bash
 python main.py
 ```
 
-No `.env` needed — the Supabase project is already baked into `config.py`
-(see the comment there for why that's safe to bundle: it's the anon key,
-not an admin secret). On first run it asks for the email/password of the
-account whose devices this agent should report under (the same account
-used in the mobile app), then stores a renewable session token in
-`.session.json` (gitignored) so you're never prompted again on this
-machine — the password itself is never written to disk. If that stored
-session is later revoked, it just asks again.
-
 Each machine shows up as its own device in the dashboard, named after its
 hostname. If you want a clearer name (or two PCs happen to share a
-hostname), copy `.env.example` to `.env` and set `DEVICE_NAME`.
+hostname), set `DEVICE_NAME` in `.env`.
 
 Stop with Ctrl+C — it flushes remaining queued events before exiting.
 
 ## How it works
 
-- `auth.py` signs in against Supabase Auth (email/password once, then
-  refresh tokens) and hands `main.py` a session to keep alive.
-- `supabase_client.py` talks to Supabase's REST API as that signed-in user —
-  Row Level Security scopes every read/write to their own devices/events,
-  exactly like the mobile app. No service_role key is used anywhere in this
-  agent, so there's no highly-privileged secret sitting on the machine it
-  runs on.
+- `supabase_client.py` calls two `SECURITY DEFINER` RPC functions —
+  `enroll_device` and `submit_event` (see `supabase/schema.sql`) — passing
+  the enrollment token on every call. The token is validated server-side
+  each time; there is no user session, no password, no service_role key
+  anywhere in this agent. A leaked token only grants write access to that
+  one organization's devices/events, nothing else in the database.
 - `watchers.py` runs three background watchers (file system via `watchdog`,
   USB via polling `Win32_PnPEntity`/removable drive letters, running
   processes via `psutil`) that all feed into one callback.
