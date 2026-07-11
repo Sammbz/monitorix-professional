@@ -1,56 +1,67 @@
-# Welcome to your Expo app 👋
+# Monitorix
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Multi-tenant (B2B) PC fleet monitoring platform. Each customer company is an
+**organization**: its admins sign in to a dashboard and see, in real time,
+what happens on the company's enrolled Windows PCs — file/folder changes,
+USB device insert/remove, and application open/close.
 
-## Get started
+## Components
 
-1. Install dependencies
+| Component | Tech | Where |
+|---|---|---|
+| Admin dashboard (mobile + web) | Expo SDK 54 / React Native, expo-router | [`src/`](src/) |
+| PC monitoring agent | Python 3.12 (watchdog, psutil) | [`pc-agent/`](pc-agent/) |
+| Backend (auth, DB, realtime) | Supabase (Postgres + RLS + RPC) | [`supabase/schema.sql`](supabase/schema.sql) |
 
-   ```bash
-   npm install
-   ```
+## How it fits together
 
-2. Start the app
+1. An admin signs up in the dashboard and creates an organization
+   (`create_organization` RPC — org + admin membership, atomically).
+2. The dashboard shows the org's **enrollment token** (Enrollment token card).
+3. IT deploys `pc-agent/` on each company PC with that one token in `.env` —
+   no per-employee login. The agent enrolls the machine as a device and
+   streams events through two `SECURITY DEFINER` RPCs (`enroll_device`,
+   `submit_event`) that validate the token server-side on every call.
+4. Events land in Postgres; the dashboard subscribes via Supabase Realtime
+   and updates live. Row Level Security guarantees admins only ever see
+   their own organization's devices and events.
 
-   ```bash
-   npx expo start
-   ```
+The agent spools events to a local SQLite queue first
+([`pc-agent/spool.py`](pc-agent/spool.py)), so nothing is lost if Supabase
+is briefly unreachable.
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run the dashboard
 
 ```bash
-npm run reset-project
+npm install
+npx expo start --web        # web (desktop) — or scan the QR code in Expo Go
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Environment: `.env` at the repo root provides `EXPO_PUBLIC_SUPABASE_URL` and
+`EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 
-### Other setup steps
+## Run the PC agent
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+See [`pc-agent/README.md`](pc-agent/README.md). Short version:
 
-## Learn more
+```bash
+cd pc-agent
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env      # fill in ENROLLMENT_TOKEN from the dashboard
+python main.py
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Database
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Run the whole of [`supabase/schema.sql`](supabase/schema.sql) in the
+Supabase SQL Editor — it's idempotent, so re-run it in full after any schema
+change.
 
-## Join the community
+## Roadmap
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Large-screen (desktop web) dashboard layout
+- Device online/offline status, token revocation from the UI
+- Agent as a Windows service (auto-start)
+- Desktop app packaging (Electron/Tauri)
