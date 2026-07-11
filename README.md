@@ -71,6 +71,17 @@ Run the whole of [`supabase/schema.sql`](supabase/schema.sql) in the
 Supabase SQL Editor — it's idempotent, so re-run it in full after any schema
 change.
 
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — how the three components
+  fit together, folder layout, and code conventions. **Read this first.**
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, style rules, commit and PR
+  guidelines.
+- [`docs/securite.md`](docs/securite.md) — threat model, protections in
+  place (SQL injection, RLS, API keys), and the pre-production checklist.
+- [`docs/analyse-marche.md`](docs/analyse-marche.md) — honest market
+  assessment (français).
+
 ## Roadmap
 
 - Large-screen (desktop web) dashboard layout

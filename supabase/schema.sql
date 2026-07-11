@@ -232,8 +232,8 @@ begin
     raise exception 'Not signed in';
   end if;
 
-  if coalesce(trim(p_name), '') = '' then
-    raise exception 'Organization name is required';
+  if coalesce(trim(p_name), '') = '' or length(trim(p_name)) > 120 then
+    raise exception 'Organization name must be 1-120 characters';
   end if;
 
   insert into public.organizations (name)
@@ -328,6 +328,12 @@ declare
   v_org_id uuid;
   v_device_id uuid;
 begin
+  -- Input bounds: a leaked token must not let anyone stuff the devices
+  -- table with garbage names.
+  if coalesce(trim(p_device_name), '') = '' or length(p_device_name) > 120 then
+    raise exception 'Device name must be 1-120 characters';
+  end if;
+
   select organization_id into v_org_id
   from public.enrollment_tokens
   where token = p_token and not revoked;
@@ -369,6 +375,18 @@ declare
   v_device_org_id uuid;
   v_event_id uuid;
 begin
+  -- Input bounds: cap what a (possibly leaked) token can write, so the
+  -- events table can't be flooded with oversized payloads.
+  if coalesce(trim(p_event_type), '') = '' or length(p_event_type) > 64 then
+    raise exception 'Event type must be 1-64 characters';
+  end if;
+  if p_message is null or length(p_message) > 4000 then
+    raise exception 'Message must be at most 4000 characters';
+  end if;
+  if pg_column_size(coalesce(p_metadata, '{}'::jsonb)) > 16384 then
+    raise exception 'Metadata must be at most 16 KB';
+  end if;
+
   select organization_id into v_org_id
   from public.enrollment_tokens
   where token = p_token and not revoked;

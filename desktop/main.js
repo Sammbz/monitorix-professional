@@ -35,9 +35,10 @@ function startServer() {
       const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       let filePath = path.normalize(path.join(DIST_DIR, urlPath));
 
-      // Never serve anything outside dist, and fall back to index.html for
-      // routes (single-page app behavior).
-      if (!filePath.startsWith(DIST_DIR)) {
+      // Never serve anything outside dist (the path.sep suffix also blocks
+      // sibling directories like "dist-evil"), and fall back to index.html
+      // for routes (single-page app behavior).
+      if (filePath !== DIST_DIR && !filePath.startsWith(DIST_DIR + path.sep)) {
         res.writeHead(403);
         res.end();
         return;
@@ -77,6 +78,12 @@ async function createWindow() {
     title: 'Monitorix',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'assets', 'images', 'icon.png'),
+    webPreferences: {
+      // The renderer only shows a web page; it never needs Node. Keep the
+      // isolation defaults explicit so a bug in the page can't reach the OS.
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
   });
 
   await win.loadURL(`http://127.0.0.1:${port}/`);
