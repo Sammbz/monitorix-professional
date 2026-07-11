@@ -1,22 +1,17 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Link } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActivityChart } from '@/components/dashboard/activity-chart';
 import { EventDetails } from '@/components/dashboard/event-details';
+import { EventRow } from '@/components/dashboard/event-row';
 import { StatsRow } from '@/components/dashboard/stats-row';
 import { EnrollmentTokenCard } from '@/components/enrollment-token-card';
 import { InviteAdminCard } from '@/components/invite-admin-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import {
-  CategoryColors,
-  MaxContentWidth,
-  MaxContentWidthWide,
-  Radius,
-  Spacing,
-  WideBreakpoint,
-} from '@/constants/theme';
+import { MaxContentWidth, MaxContentWidthWide, Radius, Spacing, WideBreakpoint } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
 import { useDashboard } from '@/hooks/use-dashboard';
 import { useNow } from '@/hooks/use-now';
@@ -24,8 +19,7 @@ import { useOrganization } from '@/hooks/use-organization';
 import { useTheme } from '@/hooks/use-theme';
 import { useUsbAlerts } from '@/hooks/use-usb-alerts';
 import { isDeviceOnline } from '@/lib/device-status';
-import { categorizeEvent, EVENT_CATEGORY_TABS, eventTypesForCategory, getEventDetail } from '@/lib/event-categories';
-import { getEventIcon } from '@/lib/event-icons';
+import { EVENT_CATEGORY_TABS, eventTypesForCategory } from '@/lib/event-categories';
 import type { Device } from '@/types/monitoring';
 
 type CategoryTabKey = (typeof EVENT_CATEGORY_TABS)[number]['key'];
@@ -79,6 +73,13 @@ export default function DashboardScreen() {
         </ThemedText>
       </View>
       <View style={styles.headerActions}>
+        <Link href="/history" asChild>
+          <Pressable>
+            <ThemedText type="link" themeColor="textSecondary">
+              History
+            </ThemedText>
+          </Pressable>
+        </Link>
         {usbAlerts.supported && (
           <Pressable onPress={usbAlerts.toggle}>
             <ThemedText type="link" themeColor={usbAlerts.enabled ? 'accent' : 'textSecondary'}>
@@ -201,52 +202,10 @@ export default function DashboardScreen() {
         ) : null
       }
       renderItem={({ item }) => {
-        const category = categorizeEvent(item.event_type);
-        const detail = getEventDetail(item.metadata);
         const selected = selectedEventId === item.id;
         return (
           <View>
-            <Pressable style={styles.eventRow} onPress={() => toggleEvent(item.id)}>
-              <View style={[styles.eventAccent, { backgroundColor: CategoryColors[category] }]} />
-              <ThemedView
-                type="backgroundElement"
-                style={[
-                  styles.eventBody,
-                  { borderColor: selected ? theme.accent : theme.border },
-                ]}>
-                <View style={[styles.eventIconBox, { backgroundColor: CategoryColors[category] + '22' }]}>
-                  <MaterialCommunityIcons
-                    name={getEventIcon(item.event_type, item.metadata)}
-                    size={18}
-                    color={CategoryColors[category]}
-                  />
-                </View>
-                <View style={styles.eventContent}>
-                  <View style={styles.eventRowHeader}>
-                    <ThemedText type="code" style={{ color: CategoryColors[category] }}>
-                      {item.event_type}
-                    </ThemedText>
-                    <ThemedText themeColor="textSecondary" type="code">
-                      {formatTimestamp(item.created_at)}
-                    </ThemedText>
-                  </View>
-                  {detail ? (
-                    <ThemedText type="smallBold" style={styles.eventMessage} numberOfLines={1}>
-                      {detail}
-                    </ThemedText>
-                  ) : (
-                    <ThemedText type="small" style={styles.eventMessage}>
-                      {item.message}
-                    </ThemedText>
-                  )}
-                  {item.devices?.name && (
-                    <ThemedText themeColor="textSecondary" type="small">
-                      {item.devices.name}
-                    </ThemedText>
-                  )}
-                </View>
-              </ThemedView>
-            </Pressable>
+            <EventRow event={item} selected={selected} onPress={() => toggleEvent(item.id)} />
             {!isWide && selected && (
               <View style={styles.inlineDetails}>
                 <EventDetails event={item} />
@@ -269,6 +228,7 @@ export default function DashboardScreen() {
             </ThemedText>
           )}
           <StatsRow deviceCount={devices.length} onlineCount={onlineCount} eventsToday={eventsToday} />
+          <ActivityChart />
           <View style={styles.columns}>
             <View style={styles.devicesColumn}>
               <ThemedText type="small" themeColor="textSecondary" style={styles.columnLabel}>
@@ -316,6 +276,7 @@ export default function DashboardScreen() {
           </>
         )}
         <StatsRow deviceCount={devices.length} onlineCount={onlineCount} eventsToday={eventsToday} />
+        <ActivityChart />
         {devices.length === 0 && !loading ? emptyDevices : deviceChips}
         {categoryTabs}
         {eventsList}
@@ -440,45 +401,6 @@ const styles = StyleSheet.create({
   emptyEvents: {
     paddingTop: Spacing.four,
     textAlign: 'center',
-  },
-  eventRow: {
-    flexDirection: 'row',
-    marginBottom: Spacing.two,
-  },
-  eventAccent: {
-    width: 3,
-    borderTopLeftRadius: Radius.small,
-    borderBottomLeftRadius: Radius.small,
-  },
-  eventBody: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopRightRadius: Radius.medium,
-    borderBottomRightRadius: Radius.medium,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: 0,
-    padding: Spacing.three,
-    gap: Spacing.three,
-  },
-  eventIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: Radius.small,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  eventContent: {
-    flex: 1,
-    gap: Spacing.half,
-  },
-  eventRowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  eventMessage: {
-    paddingTop: Spacing.half,
   },
   inlineDetails: {
     marginBottom: Spacing.two,

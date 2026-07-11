@@ -299,6 +299,23 @@ $$;
 
 grant execute on function public.accept_invitation(text) to authenticated;
 
+-- Hourly event counts for the dashboard activity chart. SECURITY INVOKER
+-- (the default): RLS on events applies, so callers only ever aggregate
+-- their own organization's events.
+create or replace function public.events_activity(p_hours int default 24)
+returns table (bucket timestamptz, event_count bigint)
+language sql
+stable
+as $$
+  select date_trunc('hour', created_at) as bucket, count(*) as event_count
+  from public.events
+  where created_at > now() - make_interval(hours => p_hours)
+  group by 1
+  order by 1;
+$$;
+
+grant execute on function public.events_activity(int) to authenticated;
+
 -- RPC functions for the PC agent (token-based, no personal login) ---------------
 
 create or replace function public.enroll_device(p_token text, p_device_name text)
