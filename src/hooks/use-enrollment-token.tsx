@@ -55,5 +55,21 @@ export function useEnrollmentToken(organizationId: string | null) {
     return { error: null };
   }, [organizationId]);
 
-  return { token, loading, error, generateToken, refetch };
+  const revokeToken = useCallback(async (): Promise<{ error: string | null }> => {
+    if (!token) return { error: 'No active token' };
+
+    const { error: updateError } = await supabase
+      .from('enrollment_tokens')
+      .update({ revoked: true })
+      .eq('id', token.id);
+
+    if (updateError) {
+      return { error: updateError.message };
+    }
+
+    setToken(null);
+    return { error: null };
+  }, [token]);
+
+  return { token, loading, error, generateToken, revokeToken, refetch };
 }

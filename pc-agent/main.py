@@ -4,6 +4,7 @@ import logging
 import signal
 import threading
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,15 @@ from watchers import run_file_watcher, run_process_watcher, run_usb_watcher
 logger = logging.getLogger("pc-agent")
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, log_file: Path | None) -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file is not None:
+        # Rotating so an always-on agent can't fill the disk.
+        handlers.append(RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8"))
     logging.basicConfig(
         level=getattr(logging, level, logging.INFO),
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        handlers=handlers,
     )
 
 
@@ -88,7 +94,7 @@ def run_heartbeat(
 
 def main() -> int:
     config = load_config()
-    configure_logging(config.log_level)
+    configure_logging(config.log_level, config.log_file)
     logger.info("Starting pc-agent as device '%s'", config.device_name)
 
     base_dir = Path(__file__).resolve().parent

@@ -34,6 +34,23 @@ hostname), set `DEVICE_NAME` in `.env`.
 
 Stop with Ctrl+C — it flushes remaining queued events before exiting.
 
+## Start automatically at logon (recommended for deployment)
+
+From the `pc-agent` folder, after the setup above:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-autostart.ps1
+```
+
+This registers a per-user Scheduled Task (no admin rights needed) that runs
+the agent invisibly via `pythonw.exe` at every logon, restarts it if it
+crashes, and starts it immediately. Logs go to `agent.log` in this folder
+(rotating, 5 MB × 2). Remove with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall-autostart.ps1
+```
+
 ## How it works
 
 - `supabase_client.py` calls two `SECURITY DEFINER` RPC functions —

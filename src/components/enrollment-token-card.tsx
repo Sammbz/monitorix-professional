@@ -10,9 +10,11 @@ import { useTheme } from '@/hooks/use-theme';
 
 export function EnrollmentTokenCard({ organizationId }: { organizationId: string }) {
   const theme = useTheme();
-  const { token, loading, generateToken } = useEnrollmentToken(organizationId);
+  const { token, loading, generateToken, revokeToken } = useEnrollmentToken(organizationId);
   const [copied, setCopied] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleCopy() {
     if (!token) return;
@@ -22,9 +24,20 @@ export function EnrollmentTokenCard({ organizationId }: { organizationId: string
   }
 
   async function handleGenerate() {
-    setGenerating(true);
-    await generateToken();
-    setGenerating(false);
+    setBusy(true);
+    setActionError(null);
+    const { error } = await generateToken();
+    setActionError(error);
+    setBusy(false);
+  }
+
+  async function handleRevoke() {
+    setBusy(true);
+    setActionError(null);
+    const { error } = await revokeToken();
+    setActionError(error);
+    setConfirmingRevoke(false);
+    setBusy(false);
   }
 
   if (loading) return null;
@@ -37,18 +50,50 @@ export function EnrollmentTokenCard({ organizationId }: { organizationId: string
       </ThemedText>
 
       {token ? (
-        <View style={styles.tokenRow}>
-          <ThemedText type="code" numberOfLines={1} style={styles.tokenText}>
-            {token.token}
-          </ThemedText>
-          <Pressable onPress={handleCopy}>
-            <ThemedText type="linkPrimary">{copied ? 'Copied!' : 'Copy'}</ThemedText>
-          </Pressable>
-        </View>
+        <>
+          <View style={styles.tokenRow}>
+            <ThemedText type="code" numberOfLines={1} style={styles.tokenText}>
+              {token.token}
+            </ThemedText>
+            <Pressable onPress={handleCopy}>
+              <ThemedText type="linkPrimary">{copied ? 'Copied!' : 'Copy'}</ThemedText>
+            </Pressable>
+          </View>
+
+          {confirmingRevoke ? (
+            <View style={styles.confirmRow}>
+              <ThemedText type="small" themeColor="danger" style={styles.confirmText}>
+                Agents using this token will stop reporting until you deploy a new one.
+              </ThemedText>
+              <Pressable onPress={() => setConfirmingRevoke(false)} disabled={busy}>
+                <ThemedText type="link" themeColor="textSecondary">
+                  Cancel
+                </ThemedText>
+              </Pressable>
+              <Pressable onPress={handleRevoke} disabled={busy}>
+                <ThemedText type="linkPrimary" themeColor="danger">
+                  {busy ? 'Revoking…' : 'Revoke'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={() => setConfirmingRevoke(true)}>
+              <ThemedText type="link" themeColor="danger">
+                Revoke token…
+              </ThemedText>
+            </Pressable>
+          )}
+        </>
       ) : (
-        <Pressable onPress={handleGenerate} disabled={generating}>
-          <ThemedText type="linkPrimary">{generating ? 'Generating…' : 'Generate token'}</ThemedText>
+        <Pressable onPress={handleGenerate} disabled={busy}>
+          <ThemedText type="linkPrimary">{busy ? 'Generating…' : 'Generate token'}</ThemedText>
         </Pressable>
+      )}
+
+      {actionError && (
+        <ThemedText themeColor="danger" type="small">
+          {actionError}
+        </ThemedText>
       )}
     </ThemedView>
   );
@@ -68,6 +113,14 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   tokenText: {
+    flex: 1,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  confirmText: {
     flex: 1,
   },
 });
