@@ -375,25 +375,25 @@ begin
 end;
 $$;
 
--- Read-only check used BEFORE token validation: blocks callers that already
--- accumulated too many auth failures, without counting legitimate calls.
-create or replace function public.assert_not_blocked(p_key text, p_max_failures int, p_window_seconds int)
-returns void
-language plpgsql
+-- Read-only check used BEFORE token validation: returns true when the caller
+-- already accumulated too many auth failures in the window.
+--
+-- IMPORTANT: recording an auth failure and then rejecting with `raise` does
+-- NOT work — raising rolls back the whole transaction, including the counter
+-- bump, so failures never accumulate. The public RPCs below therefore record
+-- the failure and RETURN a sentinel (null / normal return) instead of
+-- raising, which commits the bump. The agent already treats a null device id
+-- as an error, so the client contract is preserved.
+create or replace function public.is_rate_blocked(p_key text, p_max_failures int, p_window_seconds int)
+returns boolean
+language sql
 stable
 as $$
-declare
-  v_count int;
-begin
-  select call_count into v_count
-  from public.rpc_rate_limits
-  where key = p_key
-    and window_start > now() - make_interval(secs => p_window_seconds);
-
-  if coalesce(v_count, 0) >= p_max_failures then
-    raise exception 'Too many failed attempts, try again later';
-  end if;
-end;
+  select coalesce((
+    select call_count from public.rpc_rate_limits
+    where key = p_key
+      and window_start > now() - make_interval(secs => p_window_seconds)
+  ), 0) >= p_max_failures;
 $$;
 
 -- Best-effort client IP as seen by the API gateway. Falls back to a shared
@@ -430,7 +430,11 @@ begin
   end if;
 
   -- Brute force: an IP with 20+ invalid-token attempts in 15 min is blocked.
-  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+  -- Return null (not raise) so a blocked/failed call still commits its
+  -- counter bump; the agent treats a null device id as an error.
+  if public.is_rate_blocked('authfail:ip:' || public.client_ip(), 20, 900) then
+    return null;
+  end if;
 
   select organization_id into v_org_id
   from public.enrollment_tokens
@@ -438,7 +442,7 @@ begin
 
   if v_org_id is null then
     perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
-    raise exception 'Invalid or revoked enrollment token';
+    return null;
   end if;
 
   -- Cap enrollments per organization (120/hour is far above any legitimate
@@ -490,7 +494,11 @@ begin
     raise exception 'Metadata must be at most 16 KB';
   end if;
 
-  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+  -- See is_rate_blocked's note: return a sentinel on block/auth-failure so
+  -- the counter bump commits instead of being rolled back by a raise.
+  if public.is_rate_blocked('authfail:ip:' || public.client_ip(), 20, 900) then
+    return null;
+  end if;
 
   select organization_id into v_org_id
   from public.enrollment_tokens
@@ -498,7 +506,7 @@ begin
 
   if v_org_id is null then
     perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
-    raise exception 'Invalid or revoked enrollment token';
+    return null;
   end if;
 
   select organization_id into v_device_org_id
@@ -537,7 +545,11 @@ declare
   v_org_id uuid;
   v_device_org_id uuid;
 begin
-  perform public.assert_not_blocked('authfail:ip:' || public.client_ip(), 20, 900);
+  -- See is_rate_blocked's note: return (not raise) on block/auth-failure so
+  -- the counter bump commits.
+  if public.is_rate_blocked('authfail:ip:' || public.client_ip(), 20, 900) then
+    return;
+  end if;
 
   select organization_id into v_org_id
   from public.enrollment_tokens
@@ -545,7 +557,7 @@ begin
 
   if v_org_id is null then
     perform public.bump_rate_counter('authfail:ip:' || public.client_ip(), 900);
-    raise exception 'Invalid or revoked enrollment token';
+    return;
   end if;
 
   select organization_id into v_device_org_id

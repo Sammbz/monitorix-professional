@@ -110,8 +110,15 @@ RLS sans politique — seules les fonctions serveur y accèdent). Trois niveaux 
 Détails d'implémentation :
 
 - Les échecs d'authentification sont comptés **par IP** et vérifiés *avant*
-  la validation du token (`assert_not_blocked`), sans compter les appels
+  la validation du token (`is_rate_blocked`), sans compter les appels
   légitimes — un bureau derrière un NAT avec 50 agents n'est jamais gêné.
+- **Piège Postgres important** (trouvé en test) : enregistrer un échec puis
+  rejeter la requête avec `raise` ne fonctionne **pas** — le `raise` annule
+  toute la transaction, y compris l'incrément du compteur, donc les échecs
+  ne s'accumulent jamais. Les RPC enregistrent donc l'échec et **retournent
+  un sentinel** (null / retour normal) au lieu de lever une exception, ce qui
+  valide (commit) l'incrément. L'agent traite déjà un id d'appareil null
+  comme une erreur, donc le contrat client est préservé.
 - Les clés de compteur ne contiennent **jamais le token brut** (uniquement
   des ids d'org/appareil et des IP).
 - Nettoyage opportuniste : les clés inactives depuis 2 jours sont purgées.
