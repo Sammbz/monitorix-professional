@@ -41,6 +41,7 @@ class Config:
     supabase_timeout_seconds: float
     log_level: str
     log_file: Path | None
+    show_tray_icon: bool
 
 
 def _as_bool(value: str | None, default: bool) -> bool:
@@ -105,4 +106,7 @@ def load_config() -> Config:
         # No console when running headless under pythonw.exe (autostart task),
         # so logs must go to a file to be seen at all.
         log_file=Path(os.getenv("LOG_FILE").strip()).expanduser() if os.getenv("LOG_FILE", "").strip() else None,
+        # Visible tray icon: transparent monitoring. Default on; set false for
+        # a fully invisible agent.
+        show_tray_icon=_as_bool(os.getenv("SHOW_TRAY_ICON"), True),
     )

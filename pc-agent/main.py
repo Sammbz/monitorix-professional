@@ -11,6 +11,7 @@ from typing import Any
 from config import load_config
 from spool import SQLiteSpool
 from supabase_client import SupabaseRestClient
+from tray import run_tray_icon
 from watchers import run_file_watcher, run_process_watcher, run_usb_watcher
 
 logger = logging.getLogger("pc-agent")
@@ -203,12 +204,28 @@ def main() -> int:
 
     enqueue("AGENT_STARTED", "Monitoring agent started", {"watch_paths": [str(p) for p in config.watch_paths]})
 
+    # Optional visible presence. Quitting from its menu sets shutdown_event,
+    # which breaks the loop below into the same clean-shutdown path as Ctrl+C.
+    tray_icon = None
+    if config.show_tray_icon:
+        tray_icon = run_tray_icon(
+            device_name=config.device_name,
+            log_file=config.log_file,
+            on_quit=shutdown_event.set,
+        )
+
     try:
         while not shutdown_event.is_set():
             time.sleep(0.5)
     except KeyboardInterrupt:
         shutdown_event.set()
     finally:
+        if tray_icon is not None:
+            try:
+                tray_icon.stop()
+            except Exception:
+                logger.debug("Tray icon stop failed", exc_info=True)
+
         if observer is not None:
             observer.stop()
             observer.join(timeout=10)
