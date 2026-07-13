@@ -136,6 +136,12 @@ Par ordre de priorité :
    que non révoqués). Ajouter un `expires_at` comme pour les invitations.
 2. **Confirmation d'email obligatoire** à l'inscription (réglage Supabase
    Auth) + politique de mot de passe forte.
+   Dans le même écran : activer la **protection anti-bot** (intégration
+   native Cloudflare Turnstile/hCaptcha — Dashboard → Authentication →
+   Bot and Abuse Protection, zéro code à écrire).
+   Et prévoir une **surveillance des métriques d'abus** : volume d'events
+   par org, échecs d'auth (`rpc_rate_limits` est déjà consultable en SQL),
+   alertes sur pics anormaux.
 3. **Audit log** des actions admin (qui a révoqué un token, supprimé un
    appareil, invité qui).
 4. **Chiffrement au repos** des chemins de fichiers sensibles si le contenu
