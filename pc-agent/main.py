@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import signal
+import subprocess
+import sys
 import threading
 import time
 from logging.handlers import RotatingFileHandler
@@ -106,10 +108,25 @@ def main() -> int:
     base_dir = Path(__file__).resolve().parent
     spool = SQLiteSpool(base_dir / "spool.db")
 
+    # No token yet? Ask for it with the connect window (first-run flow), then
+    # it's saved to .env for next time.
+    enrollment_token = config.enrollment_token
+    if not enrollment_token:
+        logger.info("No enrollment token configured; opening the connect window")
+        try:
+            from enroll_ui import prompt_for_token
+
+            enrollment_token = prompt_for_token(base_dir / ".env") or ""
+        except Exception:
+            logger.exception("Could not show the connect window")
+        if not enrollment_token:
+            logger.error("No enrollment token provided; exiting")
+            return 1
+
     client = SupabaseRestClient(
         supabase_url=config.supabase_url,
         anon_key=config.supabase_anon_key,
-        enrollment_token=config.enrollment_token,
+        enrollment_token=enrollment_token,
         timeout_seconds=config.supabase_timeout_seconds,
     )
 
@@ -122,12 +139,27 @@ def main() -> int:
 
     stop_event = threading.Event()
     shutdown_event = threading.Event()
+    paused = threading.Event()
 
     def enqueue(event_type: str, message: str, metadata: dict[str, Any]) -> None:
+        # While paused, drop watcher events but let lifecycle events through
+        # (they're emitted around the pause toggle, see toggle_pause).
+        if paused.is_set() and event_type not in ("AGENT_PAUSED", "AGENT_STOPPED"):
+            return
         try:
             spool.enqueue(event_type, message, metadata or {})
         except Exception:
             logger.exception("Failed to enqueue event: %s", event_type)
+
+    def toggle_pause() -> None:
+        if paused.is_set():
+            paused.clear()
+            enqueue("AGENT_RESUMED", "Monitoring resumed", {})
+            logger.info("Monitoring resumed")
+        else:
+            enqueue("AGENT_PAUSED", "Monitoring paused", {})
+            paused.set()
+            logger.info("Monitoring paused")
 
     def request_shutdown(signum: int, _frame: Any) -> None:
         logger.info("Signal %s received, shutting down...", signum)
@@ -208,10 +240,21 @@ def main() -> int:
     # which breaks the loop below into the same clean-shutdown path as Ctrl+C.
     tray_icon = None
     if config.show_tray_icon:
+        def open_config_window() -> None:
+            # Separate process so tkinter gets its own main thread, away from
+            # the tray's thread. Applies on next restart.
+            try:
+                subprocess.Popen([sys.executable, str(base_dir / "enroll_ui.py")])
+            except Exception:
+                logger.exception("Could not open the connect window")
+
         tray_icon = run_tray_icon(
             device_name=config.device_name,
             log_file=config.log_file,
             on_quit=shutdown_event.set,
+            is_paused=paused.is_set,
+            toggle_pause=toggle_pause,
+            on_configure=open_config_window,
         )
 
     try:

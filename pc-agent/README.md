@@ -32,7 +32,22 @@ Each machine shows up as its own device in the dashboard, named after its
 hostname. If you want a clearer name (or two PCs happen to share a
 hostname), set `DEVICE_NAME` in `.env`.
 
+On first launch without an `ENROLLMENT_TOKEN`, a small **connect window**
+opens so you can paste the code from the dashboard — it's saved to `.env`
+for next time. The same window is reachable later from the tray icon
+(**Configurer le code…**).
+
 Stop with Ctrl+C — it flushes remaining queued events before exiting.
+
+## Tray icon
+
+By default the agent shows a system-tray icon (set `SHOW_TRAY_ICON=false`
+for a fully invisible agent). Right-click it to:
+
+- **Mettre en pause / Reprendre** — pause event capture without disconnecting
+- **Ouvrir les logs** — open the log file
+- **Configurer le code…** — re-enter the enrollment code
+- **Quitter** — stop the agent cleanly
 
 ## Start automatically at logon (recommended for deployment)
 

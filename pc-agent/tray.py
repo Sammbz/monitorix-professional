@@ -51,6 +51,9 @@ def run_tray_icon(
     device_name: str,
     log_file: Path | None,
     on_quit: Callable[[], None],
+    is_paused: Callable[[], bool] | None = None,
+    toggle_pause: Callable[[], None] | None = None,
+    on_configure: Callable[[], None] | None = None,
 ) -> Any | None:
     """Starts a detached tray icon. Returns the icon (call .stop() on it at
     shutdown) or None when a tray isn't available."""
@@ -61,17 +64,35 @@ def run_tray_icon(
         logger.warning("pystray/Pillow not available; running without a tray icon")
         return None
 
+    def _status_text(_item: Any) -> str:
+        if is_paused is not None and is_paused():
+            return "Monitorix — en pause"
+        return "Monitorix — surveillance active"
+
     def _quit(icon: Any, _item: Any) -> None:
         on_quit()
         icon.stop()
 
-    menu_items = [
-        MenuItem(f"Monitorix — surveillance active", None, enabled=False),
+    menu_items: list[Any] = [
+        MenuItem(_status_text, None, enabled=False),
         MenuItem(f"Appareil : {device_name}", None, enabled=False),
         Menu.SEPARATOR,
     ]
+
+    if toggle_pause is not None and is_paused is not None:
+        def _toggle(icon: Any, _item: Any) -> None:
+            toggle_pause()
+            icon.update_menu()  # refresh the dynamic labels
+
+        menu_items.append(
+            MenuItem(lambda _item: "Reprendre" if is_paused() else "Mettre en pause", _toggle)
+        )
+
     if log_file is not None:
         menu_items.append(MenuItem("Ouvrir les logs", lambda _i, _it: _open_path(log_file)))
+    if on_configure is not None:
+        menu_items.append(MenuItem("Configurer le code…", lambda _i, _it: on_configure()))
+    menu_items.append(Menu.SEPARATOR)
     menu_items.append(MenuItem("Quitter", _quit))
 
     try:

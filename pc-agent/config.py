@@ -59,13 +59,6 @@ def _as_float(value: str | None, default: float) -> float:
         return default
 
 
-def _required(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
-
-
 def _default_watch_paths() -> tuple[Path, ...]:
     home = Path.home()
     candidates = (home / "Desktop", home / "Documents", home / "Downloads")
@@ -91,7 +84,8 @@ def load_config() -> Config:
     return Config(
         supabase_url=os.getenv("SUPABASE_URL", "").strip() or DEFAULT_SUPABASE_URL,
         supabase_anon_key=os.getenv("SUPABASE_ANON_KEY", "").strip() or DEFAULT_SUPABASE_ANON_KEY,
-        enrollment_token=_required("ENROLLMENT_TOKEN"),
+        # May be empty: main.py then opens the connect window to collect it.
+        enrollment_token=os.getenv("ENROLLMENT_TOKEN", "").strip(),
         device_name=os.getenv("DEVICE_NAME", "").strip() or platform.node() or "pc-agent",
         watch_paths=_parse_watch_paths(os.getenv("WATCH_PATHS")),
         file_watch_recursive=_as_bool(os.getenv("FILE_WATCH_RECURSIVE"), True),
