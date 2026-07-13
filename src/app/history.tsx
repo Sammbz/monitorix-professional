@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { HISTORY_RANGES, useEventHistory, type HistoryRange } from '@/hooks/use-event-history';
 import { useTheme } from '@/hooks/use-theme';
+import { downloadCsv, eventsToCsv, isCsvDownloadSupported } from '@/lib/csv';
 
 export default function HistoryScreen() {
   const theme = useTheme();
@@ -24,7 +25,21 @@ export default function HistoryScreen() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  const { events, loading, loadingMore, hasMore, error, loadMore } = useEventHistory({ search, range });
+  const { events, loading, loadingMore, hasMore, error, loadMore, fetchAllForExport } = useEventHistory({
+    search,
+    range,
+  });
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    const all = await fetchAllForExport();
+    if (all && all.length > 0) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(`monitorix-events-${stamp}.csv`, eventsToCsv(all));
+    }
+    setExporting(false);
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -76,6 +91,11 @@ export default function HistoryScreen() {
               </Pressable>
             );
           })}
+          {isCsvDownloadSupported() && (
+            <Pressable onPress={handleExport} disabled={exporting || loading} style={styles.exportButton}>
+              <ThemedText type="linkPrimary">{exporting ? 'Exporting…' : 'Export CSV'}</ThemedText>
+            </Pressable>
+          )}
         </View>
 
         {error && (
@@ -157,7 +177,11 @@ const styles = StyleSheet.create({
   },
   rangeRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.two,
+  },
+  exportButton: {
+    marginLeft: 'auto',
   },
   rangeChip: {
     borderRadius: Radius.pill,

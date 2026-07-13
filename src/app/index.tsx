@@ -8,7 +8,6 @@ import { EventDetails } from '@/components/dashboard/event-details';
 import { EventRow } from '@/components/dashboard/event-row';
 import { StatsRow } from '@/components/dashboard/stats-row';
 import { EnrollmentTokenCard } from '@/components/enrollment-token-card';
-import { InviteAdminCard } from '@/components/invite-admin-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, MaxContentWidthWide, Radius, Spacing, WideBreakpoint } from '@/constants/theme';
@@ -77,6 +76,13 @@ export default function DashboardScreen() {
           <Pressable>
             <ThemedText type="link" themeColor="textSecondary">
               History
+            </ThemedText>
+          </Pressable>
+        </Link>
+        <Link href="/team" asChild>
+          <Pressable>
+            <ThemedText type="link" themeColor="textSecondary">
+              Team
             </ThemedText>
           </Pressable>
         </Link>
@@ -236,12 +242,7 @@ export default function DashboardScreen() {
               </ThemedText>
               {devices.length === 0 && !loading ? emptyDevices : devices.map(renderDeviceRow)}
               <View style={styles.tokenCardSlot}>
-                {organization && (
-                  <>
-                    <EnrollmentTokenCard organizationId={organization.id} />
-                    <InviteAdminCard organizationId={organization.id} />
-                  </>
-                )}
+                {organization && <EnrollmentTokenCard organizationId={organization.id} />}
               </View>
             </View>
             <View style={styles.eventsColumn}>
@@ -269,12 +270,7 @@ export default function DashboardScreen() {
             {error}
           </ThemedText>
         )}
-        {organization && (
-          <>
-            <EnrollmentTokenCard organizationId={organization.id} />
-            <InviteAdminCard organizationId={organization.id} />
-          </>
-        )}
+        {organization && <EnrollmentTokenCard organizationId={organization.id} />}
         <StatsRow deviceCount={devices.length} onlineCount={onlineCount} eventsToday={eventsToday} />
         <ActivityChart />
         {devices.length === 0 && !loading ? emptyDevices : deviceChips}

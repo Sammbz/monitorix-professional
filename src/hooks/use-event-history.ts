@@ -13,6 +13,7 @@ export const HISTORY_RANGES: { key: HistoryRange; label: string }[] = [
 ];
 
 const PAGE_SIZE = 50;
+const EXPORT_LIMIT = 5000;
 
 function rangeStartIso(range: HistoryRange): string | null {
   if (range === 'all') return null;
@@ -31,12 +32,12 @@ export function useEventHistory({ search, range }: { search: string; range: Hist
   const [error, setError] = useState<string | null>(null);
 
   const fetchPage = useCallback(
-    async (offset: number) => {
+    async (offset: number, limit: number = PAGE_SIZE) => {
       let query = supabase
         .from('events')
         .select('*, devices(name)')
         .order('created_at', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .range(offset, offset + limit - 1);
 
       const start = rangeStartIso(range);
       if (start) query = query.gte('created_at', start);
@@ -96,5 +97,16 @@ export function useEventHistory({ search, range }: { search: string; range: Hist
     setLoadingMore(false);
   }, [fetchPage, events.length, hasMore, loadingMore]);
 
-  return { events, loading, loadingMore, hasMore, error, loadMore };
+  /** Everything matching the current filters (capped at EXPORT_LIMIT), for
+   * CSV export — independent of what's paginated into the list. */
+  const fetchAllForExport = useCallback(async (): Promise<EventWithDevice[] | null> => {
+    const { data, error: queryError } = await fetchPage(0, EXPORT_LIMIT);
+    if (queryError) {
+      setError(queryError.message);
+      return null;
+    }
+    return (data as EventWithDevice[]) ?? [];
+  }, [fetchPage]);
+
+  return { events, loading, loadingMore, hasMore, error, loadMore, fetchAllForExport };
 }

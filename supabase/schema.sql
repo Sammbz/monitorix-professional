@@ -299,6 +299,58 @@ $$;
 
 grant execute on function public.accept_invitation(text) to authenticated;
 
+-- Team management RPCs ----------------------------------------------------------
+
+-- Members of an organization with their email. SECURITY DEFINER because
+-- auth.users isn't readable from the client; the is_org_admin() predicate in
+-- the WHERE clause makes it return nothing for non-admins.
+create or replace function public.org_members(p_organization_id uuid)
+returns table (membership_id uuid, user_id uuid, email text, role text, created_at timestamptz)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select m.id, m.user_id, u.email::text, m.role, m.created_at
+  from public.memberships m
+  join auth.users u on u.id = m.user_id
+  where m.organization_id = p_organization_id
+    and public.is_org_admin(p_organization_id)
+  order by m.created_at;
+$$;
+
+grant execute on function public.org_members(uuid) to authenticated;
+
+-- Removes a member from an organization. Only admins of that org may call
+-- it, and the last admin can never be removed (an org must stay manageable).
+create or replace function public.remove_member(p_membership_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_membership public.memberships;
+begin
+  select * into v_membership from public.memberships where id = p_membership_id;
+
+  if v_membership.id is null or not public.is_org_admin(v_membership.organization_id) then
+    raise exception 'Not allowed';
+  end if;
+
+  if v_membership.role = 'admin' and (
+    select count(*) from public.memberships
+    where organization_id = v_membership.organization_id and role = 'admin'
+  ) <= 1 then
+    raise exception 'Cannot remove the last admin of an organization';
+  end if;
+
+  delete from public.memberships where id = p_membership_id;
+end;
+$$;
+
+grant execute on function public.remove_member(uuid) to authenticated;
+
 -- Hourly event counts for the dashboard activity chart. SECURITY INVOKER
 -- (the default): RLS on events applies, so callers only ever aggregate
 -- their own organization's events.

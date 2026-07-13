@@ -11,7 +11,13 @@ import { supabase } from '@/lib/supabase';
 
 type CreatedInvitation = { code: string; expires_at: string };
 
-export function InviteAdminCard({ organizationId }: { organizationId: string }) {
+export function InviteAdminCard({
+  organizationId,
+  onCreated,
+}: {
+  organizationId: string;
+  onCreated?: () => void;
+}) {
   const theme = useTheme();
   const { session } = useAuth();
   const [invitation, setInvitation] = useState<CreatedInvitation | null>(null);
@@ -34,6 +40,7 @@ export function InviteAdminCard({ organizationId }: { organizationId: string }) 
       setError(insertError?.message ?? 'Could not create an invitation');
     } else {
       setInvitation(data);
+      onCreated?.();
     }
     setBusy(false);
   }
