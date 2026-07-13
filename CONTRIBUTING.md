@@ -23,11 +23,25 @@ npx tsc --noEmit                  # typage
 npx eslint src --max-warnings=0   # lint (zéro avertissement)
 ```
 
+Lance aussi la suite de tests :
+
+```bash
+npm test
+```
+
 Pour le code Python de l'agent, vérifie au minimum qu'il compile :
 
 ```bash
 cd pc-agent && python -m py_compile *.py
 ```
+
+### Tests
+
+- Les tests sont dans `src/**/__tests__/*.test.ts` (Jest + `jest-expo`).
+- Commence par les **fonctions pures** de `src/lib/` — elles se testent sans
+  mock ni rendu. Toute nouvelle fonction pure devrait venir avec ses tests.
+- Un test décrit le comportement attendu : si tu changes un comportement,
+  mets à jour son test dans le même commit.
 
 ## Style de code
 
