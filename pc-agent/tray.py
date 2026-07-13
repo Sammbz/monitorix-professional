@@ -46,6 +46,43 @@ def _open_path(path: Path) -> None:
         logger.exception("Could not open %s", path)
 
 
+# --- "Start with Windows" via a per-user registry Run key (no admin needed) ---
+
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_NAME = "MonitorixAgent"
+
+
+def _autostart_enabled() -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as key:
+            winreg.QueryValueEx(key, _RUN_NAME)
+        return True
+    except Exception:
+        return False
+
+
+def _set_autostart(enable: bool) -> None:
+    if not sys.platform.startswith("win"):
+        return
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enable:
+                winreg.SetValueEx(key, _RUN_NAME, 0, winreg.REG_SZ, f'"{sys.executable}"')
+            else:
+                try:
+                    winreg.DeleteValue(key, _RUN_NAME)
+                except FileNotFoundError:
+                    pass
+    except Exception:
+        logger.exception("Could not update the autostart setting")
+
+
 def run_tray_icon(
     *,
     device_name: str,
@@ -54,6 +91,7 @@ def run_tray_icon(
     is_paused: Callable[[], bool] | None = None,
     toggle_pause: Callable[[], None] | None = None,
     on_configure: Callable[[], None] | None = None,
+    autostart_supported: bool = False,
 ) -> Any | None:
     """Starts a detached tray icon. Returns the icon (call .stop() on it at
     shutdown) or None when a tray isn't available."""
@@ -92,6 +130,16 @@ def run_tray_icon(
         menu_items.append(MenuItem("Ouvrir les logs", lambda _i, _it: _open_path(log_file)))
     if on_configure is not None:
         menu_items.append(MenuItem("Configurer le code…", lambda _i, _it: on_configure()))
+
+    if autostart_supported:
+        def _toggle_autostart(icon: Any, _item: Any) -> None:
+            _set_autostart(not _autostart_enabled())
+            icon.update_menu()
+
+        menu_items.append(
+            MenuItem("Démarrer avec Windows", _toggle_autostart, checked=lambda _item: _autostart_enabled())
+        )
+
     menu_items.append(Menu.SEPARATOR)
     menu_items.append(MenuItem("Quitter", _quit))
 

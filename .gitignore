@@ -51,6 +51,11 @@ pc-agent/spool.db-wal
 pc-agent/.session.json
 *.log
 
+# PyInstaller output (agent exe build)
+pc-agent/build/
+pc-agent/dist/
+pc-agent/*.spec
+
 example
 
 # generated native folders

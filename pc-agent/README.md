@@ -4,7 +4,25 @@ Monitors this PC and reports events to your organization's Monitorix
 dashboard: file/folder changes in watched directories, USB drive/device
 insert-remove, and application open/close.
 
-## Setup — deploy to another PC
+## Deploy the easy way — a standalone .exe (no Python needed)
+
+Build a single self-contained executable once (on a machine that has the
+Python venv set up):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build-exe.ps1
+```
+
+This produces `dist\MonitorixAgent.exe`. Copy that one file to any Windows
+PC — **no Python, no pip, no commands needed on the target**:
+
+1. Double-click `MonitorixAgent.exe`.
+2. Paste the enrollment code (from the dashboard) in the connect window.
+3. In the tray menu, tick **Démarrer avec Windows** so it starts at every logon.
+
+The exe keeps its files (`.env`, `spool.db`, `agent.log`) next to itself.
+
+## Setup — run from source (for development)
 
 Copy the `pc-agent/` folder (or clone the repo) onto the new machine, then:
 

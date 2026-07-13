@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from config import load_config
+from paths import app_dir, is_frozen
 from spool import SQLiteSpool
 from supabase_client import SupabaseRestClient
 from tray import run_tray_icon
@@ -101,11 +103,15 @@ def run_heartbeat(
 
 
 def main() -> int:
+    base_dir = app_dir()
+
     config = load_config()
-    configure_logging(config.log_level, config.log_file)
+    # Packaged builds have no console (windowed), so default logs to a file
+    # next to the exe unless LOG_FILE overrides it.
+    log_file = config.log_file or (base_dir / "agent.log" if is_frozen() else None)
+    configure_logging(config.log_level, log_file)
     logger.info("Starting pc-agent as device '%s'", config.device_name)
 
-    base_dir = Path(__file__).resolve().parent
     spool = SQLiteSpool(base_dir / "spool.db")
 
     # No token yet? Ask for it with the connect window (first-run flow), then
@@ -242,19 +248,25 @@ def main() -> int:
     if config.show_tray_icon:
         def open_config_window() -> None:
             # Separate process so tkinter gets its own main thread, away from
-            # the tray's thread. Applies on next restart.
+            # the tray's thread. Works packaged (exe --configure) and from
+            # source (python main.py --configure). Applies on next restart.
             try:
-                subprocess.Popen([sys.executable, str(base_dir / "enroll_ui.py")])
+                if is_frozen():
+                    cmd = [sys.executable, "--configure"]
+                else:
+                    cmd = [sys.executable, os.path.abspath(sys.argv[0]), "--configure"]
+                subprocess.Popen(cmd)
             except Exception:
                 logger.exception("Could not open the connect window")
 
         tray_icon = run_tray_icon(
             device_name=config.device_name,
-            log_file=config.log_file,
+            log_file=log_file,
             on_quit=shutdown_event.set,
             is_paused=paused.is_set,
             toggle_pause=toggle_pause,
             on_configure=open_config_window,
+            autostart_supported=is_frozen(),
         )
 
     try:
@@ -286,5 +298,17 @@ def main() -> int:
     return 0
 
 
+def configure_only() -> int:
+    """`--configure`: just show the connect window and exit. Used by the tray
+    menu (and handy standalone) to (re)enter the enrollment code."""
+    from enroll_ui import prompt_for_token
+
+    load_config()  # loads any existing .env so the field is pre-filled elsewhere
+    token = prompt_for_token(app_dir() / ".env")
+    return 0 if token else 1
+
+
 if __name__ == "__main__":
+    if "--configure" in sys.argv[1:]:
+        raise SystemExit(configure_only())
     raise SystemExit(main())

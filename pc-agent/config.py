@@ -7,6 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from paths import app_dir
+
 # Bundled so the agent works on a new PC with zero setup beyond an
 # enrollment token — no .env to copy over by hand for these two. This is
 # the anon key, the same one baked into the mobile app's client bundle: it
@@ -78,8 +80,7 @@ def _parse_watch_paths(raw: str | None) -> tuple[Path, ...]:
 
 
 def load_config() -> Config:
-    base_dir = Path(__file__).resolve().parent
-    load_dotenv(base_dir / ".env", override=True)
+    load_dotenv(app_dir() / ".env", override=True)
 
     return Config(
         supabase_url=os.getenv("SUPABASE_URL", "").strip() or DEFAULT_SUPABASE_URL,
